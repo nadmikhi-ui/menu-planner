@@ -12,7 +12,7 @@ export function Screen({ title, back, children }: Props) {
     <div className="mx-auto max-w-xl">
       <header className="sticky top-0 z-10 border-b border-stone-200 bg-stone-50/95 px-4 pb-3 pt-[calc(env(safe-area-inset-top)+0.75rem)] backdrop-blur">
         {back && (
-          <a href={back.href} className="-ml-1 mb-0.5 inline-flex min-h-8 items-center px-1 text-sm font-medium text-brand-700">
+          <a href={back.href} className="-mb-1 -ml-2 inline-flex min-h-11 items-center px-2 text-sm font-medium text-brand-700">
             ‹ {back.label}
           </a>
         )}

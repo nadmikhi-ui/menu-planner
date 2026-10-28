@@ -13,7 +13,7 @@ export function Chip({ selected, onClick, children }: ChipProps) {
       type="button"
       aria-pressed={selected}
       onClick={onClick}
-      className={`min-h-10 shrink-0 rounded-full px-4 text-sm font-medium ${
+      className={`min-h-11 shrink-0 rounded-full px-4 text-sm font-medium ${
         selected
           ? 'bg-brand-700 text-white'
           : 'bg-white text-stone-700 ring-1 ring-stone-300 active:bg-stone-100'

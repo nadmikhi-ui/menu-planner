@@ -248,7 +248,7 @@ export function WeekView({ week, path }: { week: Week; path: string[] }) {
 
       {(week.status !== 'done' || data.prepTasks.length > 0) && (
         <section className="space-y-2">
-          <h3 className="text-xs font-semibold uppercase tracking-wide text-stone-500">Заморозить на этой неделе</h3>
+          <h3 className="text-xs font-semibold uppercase tracking-wide text-stone-500">Заготовки недели</h3>
           {data.prepTasks.length > 0 && (
             <PrepTaskList
               tasks={data.prepTasks}
@@ -367,7 +367,7 @@ function MealBlock({
                 type="button"
                 aria-pressed={variant === v}
                 onClick={() => variant !== v && onLunchVariant(v)}
-                className={`min-h-8 rounded-full px-2.5 font-medium ${
+                className={`min-h-11 rounded-full px-2.5 font-medium ${
                   variant === v ? 'bg-stone-800 text-white' : 'text-stone-600 ring-1 ring-stone-300'
                 }`}
               >
@@ -429,7 +429,7 @@ function MealBlock({
         })}
       </ul>
       {isLunch && editable && variant === 'main' && !slot.items.some((i) => i.role === 'salad') && (
-        <button type="button" onClick={onAddSalad} className="mt-1 min-h-9 px-2 text-sm font-medium text-brand-700">
+        <button type="button" onClick={onAddSalad} className="mt-1 min-h-11 px-2 text-sm font-medium text-brand-700">
           + Салат
         </button>
       )}
