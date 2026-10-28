@@ -1,13 +1,13 @@
 import { useLiveQuery } from 'dexie-react-hooks';
 import { useEffect, useState } from 'react';
 import { EmptyState, Screen } from '../components/Screen';
-import { Notice } from '../components/ui';
+import { Chip, Notice } from '../components/ui';
 import { db, getSettings } from '../db/db';
 import { addPrepTask, finishFreezerItem, restoreFreezerItem } from '../db/freezer';
 import { formatDate, formatWeekRange, today } from '../logic/dates';
-import { formatAge, freezerStock, prepIdeas } from '../logic/freezer';
+import { PREP_TYPES, formatAge, freezerStock, prepIdeas } from '../logic/freezer';
 import { openRoute, type ScreenProps } from '../navigation';
-import { PREP_SOURCE_LABELS, PREP_TYPE_LABELS, type Dish, type PrepTask, type Week } from '../types';
+import { PREP_SOURCE_LABELS, PREP_TYPE_LABELS, type Dish, type PrepSource, type PrepTask, type PrepType, type Week } from '../types';
 import { FreezerItemSheet, PlanWeekSheet, UsePartSheet } from './freezer/FreezerSheets';
 import { CompletePrepSheet, PrepTaskList } from './freezer/PrepTasks';
 
@@ -65,15 +65,15 @@ export function FreezerScreen({ path }: ScreenProps) {
       <Screen title="Морозилка">
         <div className="mb-4 grid grid-cols-2 gap-1 rounded-xl bg-stone-200/70 p-1">
           {[
-            { label: `В морозилке · ${stockCount}`, hash: '#/freezer', active: !ideasTab },
-            { label: `Идеи · ${ideaCount}`, hash: '#/freezer/ideas', active: ideasTab },
+            { label: `Идеи заготовок · ${ideaCount}`, hash: '#/freezer/ideas', active: ideasTab },
+            { label: `Сейчас в морозилке · ${stockCount}`, hash: '#/freezer', active: !ideasTab },
           ].map((tab) => (
             <button
               key={tab.hash}
               type="button"
               aria-pressed={tab.active}
               onClick={() => window.location.replace(tab.hash)}
-              className={`min-h-10 rounded-lg text-sm font-medium ${tab.active ? 'bg-white shadow-sm' : 'text-stone-600'}`}
+              className={`min-h-11 rounded-lg text-sm font-medium ${tab.active ? 'bg-white shadow-sm' : 'text-stone-600'}`}
             >
               {tab.label}
             </button>
@@ -124,7 +124,7 @@ function StockTab({ data }: { data: FreezerData }) {
     <div className="space-y-4">
       {data.openTasks.length > 0 && (
         <section>
-          <h2 className="mb-2 text-xs font-semibold uppercase tracking-wide text-stone-500">Заморозить на этой неделе</h2>
+          <h2 className="mb-2 text-xs font-semibold uppercase tracking-wide text-stone-500">Заготовки недели</h2>
           <PrepTaskList
             tasks={data.openTasks}
             dishesById={data.dishesById}
@@ -156,7 +156,7 @@ function StockTab({ data }: { data: FreezerData }) {
                 <button
                   type="button"
                   onClick={() => openRoute(`#/freezer/item/${item.id}`)}
-                  className="block w-full text-left"
+                  className="block min-h-11 w-full text-left"
                 >
                   <span className="flex items-baseline gap-2">
                     <span className="flex-1 font-medium">{item.name}</span>
@@ -170,14 +170,14 @@ function StockTab({ data }: { data: FreezerData }) {
                   <button
                     type="button"
                     onClick={() => openRoute(`#/freezer/use/${item.id}`)}
-                    className="min-h-10 flex-1 rounded-xl text-sm font-medium text-stone-700 ring-1 ring-stone-300 active:bg-stone-100"
+                    className="min-h-11 flex-1 rounded-xl text-sm font-medium text-stone-700 ring-1 ring-stone-300 active:bg-stone-100"
                   >
                     Использовала часть
                   </button>
                   <button
                     type="button"
                     onClick={() => void finishFreezerItem(item.id!)}
-                    className="min-h-10 flex-1 rounded-xl text-sm font-medium text-stone-700 ring-1 ring-stone-300 active:bg-stone-100"
+                    className="min-h-11 flex-1 rounded-xl text-sm font-medium text-stone-700 ring-1 ring-stone-300 active:bg-stone-100"
                   >
                     Закончилось
                   </button>
@@ -203,7 +203,7 @@ function StockTab({ data }: { data: FreezerData }) {
                 <button
                   type="button"
                   onClick={() => void restoreFreezerItem(item.id!)}
-                  className="min-h-9 shrink-0 px-1 text-sm font-medium text-brand-700"
+                  className="min-h-11 shrink-0 px-1 text-sm font-medium text-brand-700"
                 >
                   Вернуть
                 </button>
@@ -218,7 +218,10 @@ function StockTab({ data }: { data: FreezerData }) {
 }
 
 function IdeasTab({ data, onMessage }: { data: FreezerData; onMessage: (message: string) => void }) {
-  const groups = prepIdeas(data.dishes);
+  const [type, setType] = useState<PrepType | undefined>();
+  const [source, setSource] = useState<PrepSource | undefined>();
+  const groups = prepIdeas(data.dishes, { type, source });
+  const filtered = type !== undefined || source !== undefined;
 
   const plan = async (dish: Dish) => {
     if (data.openWeeks.length === 0) {
@@ -247,7 +250,19 @@ function IdeasTab({ data, onMessage }: { data: FreezerData; onMessage: (message:
       >
         + Новая идея заготовки
       </button>
-      {groups.length === 0 && (
+      <div className="space-y-2">
+        <FilterRow label="Тип" value={type} onChange={setType} options={PREP_TYPES.map((t) => [t, PREP_TYPE_LABELS[t]])} />
+        <FilterRow
+          label="Источник"
+          value={source}
+          onChange={setSource}
+          options={(Object.keys(PREP_SOURCE_LABELS) as PrepSource[]).map((x) => [x, PREP_SOURCE_LABELS[x]])}
+        />
+      </div>
+      {groups.length === 0 && filtered && (
+        <p className="py-6 text-center text-sm text-stone-500">Под этот фильтр идей нет</p>
+      )}
+      {groups.length === 0 && !filtered && (
         <EmptyState
           title="Идей заготовок пока нет"
           text="Например: смородина для компота, зажарка для борща, рубленая зелень. Их можно добавить в план недели."
@@ -262,6 +277,31 @@ function IdeasTab({ data, onMessage }: { data: FreezerData; onMessage: (message:
             ))}
           </ul>
         </section>
+      ))}
+    </div>
+  );
+}
+
+function FilterRow<T extends string>({
+  label,
+  value,
+  onChange,
+  options,
+}: {
+  label: string;
+  value: T | undefined;
+  onChange: (value: T | undefined) => void;
+  options: (readonly [T, string])[];
+}) {
+  return (
+    <div className="-mx-4 flex items-center gap-2 overflow-x-auto px-4 pb-1 [scrollbar-width:none]" role="group" aria-label={label}>
+      <Chip selected={value === undefined} onClick={() => onChange(undefined)}>
+        {label}: все
+      </Chip>
+      {options.map(([id, text]) => (
+        <Chip key={id} selected={value === id} onClick={() => onChange(value === id ? undefined : id)}>
+          {text}
+        </Chip>
       ))}
     </div>
   );
@@ -286,7 +326,7 @@ function IdeaRow({
 
   return (
     <li className="flex min-h-14 items-center gap-2 py-2 pr-2 pl-4">
-      <button type="button" onClick={() => openRoute(`#/dishes/${dish.id}`)} className="min-w-0 flex-1 text-left">
+      <button type="button" onClick={() => openRoute(`#/dishes/${dish.id}`)} className="min-h-11 min-w-0 flex-1 text-left">
         <span className="block">{dish.name}</span>
         {details && <span className="block truncate text-xs text-stone-500">{details}</span>}
         {plannedIn.length > 0 && (
@@ -298,9 +338,9 @@ function IdeaRow({
       <button
         type="button"
         onClick={onPlan}
-        className="min-h-10 shrink-0 rounded-full px-3 text-sm font-medium text-brand-700 ring-1 ring-brand-600"
+        className="min-h-11 shrink-0 rounded-full px-3 text-sm font-medium text-brand-700 ring-1 ring-brand-600"
       >
-        В план
+        На эту неделю
       </button>
     </li>
   );

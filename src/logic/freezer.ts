@@ -1,5 +1,5 @@
 // Freezer: what is frozen now and prep ideas (SPEC §6).
-import { PREP_TYPE_LABELS, type Dish, type FreezerItem, type ISODate, type PrepTask, type PrepType } from '../types';
+import { PREP_TYPE_LABELS, type Dish, type FreezerItem, type ISODate, type PrepSource, type PrepTask, type PrepType } from '../types';
 import { addMonths, monthsBetween } from './dates';
 import { sortByName } from './dish';
 import { cleanName } from './text';
@@ -55,9 +55,25 @@ export interface PrepIdeaGroup {
   dishes: Dish[];
 }
 
-/** Active prep ideas grouped by type in the order of `PREP_TYPE_LABELS`; no type → «Другое». */
-export function prepIdeas(dishes: Dish[]): PrepIdeaGroup[] {
-  const ideas = dishes.filter((d) => d.category === 'prep' && !d.archived);
+export interface PrepIdeaFilter {
+  /** Show one type only. */
+  type?: PrepType;
+  /** Show one source only; ideas without a source match no source. */
+  source?: PrepSource;
+}
+
+/**
+ * Active prep ideas, optionally filtered, grouped by type in the order of `PREP_TYPE_LABELS`;
+ * no type → «Другое».
+ */
+export function prepIdeas(dishes: Dish[], filter: PrepIdeaFilter = {}): PrepIdeaGroup[] {
+  const ideas = dishes.filter(
+    (d) =>
+      d.category === 'prep' &&
+      !d.archived &&
+      (filter.type === undefined || (d.prepType ?? 'other') === filter.type) &&
+      (filter.source === undefined || d.prepSource === filter.source),
+  );
   return PREP_TYPES.map((type) => ({
     type,
     dishes: sortByName(ideas.filter((d) => (d.prepType ?? 'other') === type)),

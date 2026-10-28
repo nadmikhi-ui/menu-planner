@@ -86,4 +86,20 @@ describe('prep ideas', () => {
     expect(prepTaskProblem(tasks, 1, notPrep)).toBe('Это не заготовка');
     expect(prepTaskProblem(tasks, 1, undefined)).toBe('Это не заготовка');
   });
+
+  it('filters ideas by type and by source', () => {
+    const fresh = makeDish('prep', 'Клубника свежая', { prepType: 'berries', prepSource: 'fresh' });
+    const bought = makeDish('prep', 'Смесь ягод', { prepType: 'berries', prepSource: 'bought' });
+    const greens = makeDish('prep', 'Укроп', { prepType: 'greens', prepSource: 'fresh' });
+    const noSource = makeDish('prep', 'Пельмени');
+    const all = [fresh, bought, greens, noSource];
+    const names = (f: Parameters<typeof prepIdeas>[1]) => prepIdeas(all, f).flatMap((g) => g.dishes.map((d) => d.name));
+
+    expect(names({})).toEqual(['Клубника свежая', 'Смесь ягод', 'Укроп', 'Пельмени']);
+    expect(names({ type: 'berries' })).toEqual(['Клубника свежая', 'Смесь ягод']);
+    expect(names({ source: 'fresh' })).toEqual(['Клубника свежая', 'Укроп']);
+    expect(names({ type: 'berries', source: 'bought' })).toEqual(['Смесь ягод']);
+    expect(names({ type: 'other' })).toEqual(['Пельмени']);
+    expect(names({ type: 'soup' })).toEqual([]);
+  });
 });

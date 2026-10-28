@@ -75,7 +75,7 @@ export function PrepTaskList({
                       type="button"
                       aria-label={`Убрать «${dish?.name ?? ''}» из плана`}
                       onClick={() => run(() => removePrepTask(task.id!))}
-                      className="flex h-11 w-9 shrink-0 items-center justify-center text-xl text-stone-400"
+                      className="flex h-11 w-11 shrink-0 items-center justify-center text-xl text-stone-400"
                     >
                       ×
                     </button>
