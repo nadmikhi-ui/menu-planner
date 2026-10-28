@@ -2,6 +2,7 @@ import {
   addSalad,
   applyDish,
   assembleWeek,
+  fillEmpty,
   rerollItem,
   setLunchVariant,
   type PickContext,
@@ -62,20 +63,35 @@ async function getDraft(weekId: number, database: MenuDB): Promise<Week> {
 
 const TABLES = (database: MenuDB) => [database.weeks, database.slots, database.dishes, database.carryOver];
 
+/** «Пересобрать всё» replaces every dish; «Заполнить только пустые» keeps the chosen ones. */
+export type AssembleMode = 'all' | 'empty';
+
 /**
- * «Собрать неделю автоматически»: replaces every slot of the draft. Dishes from the
- * carry-over queue (including ones this draft held before) are placed first (SPEC §5).
+ * «Собрать неделю автоматически». Dishes from the carry-over queue (with `all`, including ones
+ * this draft held before) are placed first, into empty positions (SPEC §5).
  */
-export async function assembleAndSave(weekId: number, rng: Rng = Math.random, database: MenuDB = db): Promise<void> {
+export async function assembleAndSave(
+  weekId: number,
+  rng: Rng = Math.random,
+  database: MenuDB = db,
+  mode: AssembleMode = 'all',
+): Promise<void> {
   await database.transaction('rw', TABLES(database), async () => {
     const week = await getDraft(weekId, database);
-    await database.slots.where('weekId').equals(weekId).delete();
-    await syncCarryOvers(weekId, database);
+    if (mode === 'all') {
+      await database.slots.where('weekId').equals(weekId).delete();
+      await syncCarryOvers(weekId, database);
+    }
 
     const ctx = await pickContext(week, rng, database);
-    const queue = queueFor(await database.carryOver.toArray(), await database.weeks.toArray(), week);
-    const slots = assembleWeek(week.startDate, ctx, toCarried(queue));
-    await database.slots.bulkAdd(slots.map((s) => ({ ...s, weekId })));
+    const carried = toCarried(queueFor(await database.carryOver.toArray(), await database.weeks.toArray(), week));
+    if (mode === 'all') {
+      const slots = assembleWeek(week.startDate, ctx, carried);
+      await database.slots.bulkAdd(slots.map((s) => ({ ...s, weekId })));
+    } else {
+      const slots = fillEmpty(await weekSlots(weekId, database), ctx, carried);
+      await database.slots.bulkPut(slots);
+    }
     await syncCarryOvers(weekId, database);
   });
 }

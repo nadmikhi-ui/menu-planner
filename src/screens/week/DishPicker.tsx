@@ -1,11 +1,10 @@
-import { useMemo, useState } from 'react';
+import { useState } from 'react';
 import { Sheet } from '../../components/Sheet';
 import { inputClass } from '../../components/ui';
 import { chooseCarryOver, chooseDish, rerollDish } from '../../db/weeks';
-import { usageCounts } from '../../logic/assemble';
 import { formatDay } from '../../logic/dates';
 import { matchesSearch, sortByName } from '../../logic/dish';
-import { ITEM_WARNING_LABELS } from '../../logic/repeats';
+import { warningText, warningsFor } from '../../logic/repeats';
 import { ROLE_CATEGORY, ROLE_LABELS } from '../../logic/week';
 import { closeRoute } from '../../navigation';
 import { CATEGORY_LABELS, MEAL_LABELS, type Slot, type Week } from '../../types';
@@ -27,14 +26,8 @@ export function DishPicker({ week, slot, itemIndex, data }: Props) {
   const strict = data.settings.repeatPolicy[category] !== 'relaxed';
   const close = () => closeRoute(`#/week/${week.id}`);
 
-  // Usage elsewhere in the week, not counting this position.
-  const used = useMemo(
-    () =>
-      usageCounts(
-        data.slots.map((s) => (s.id === slot.id ? { ...s, items: s.items.filter((_, j) => j !== itemIndex) } : s)),
-      ),
-    [data.slots, slot.id, itemIndex],
-  );
+  // Repeats are checked against the rest of the week, not this position.
+  const position = { slotIndex: data.slots.findIndex((s) => s.id === slot.id), itemIndex };
 
   const dishes = sortByName(
     data.dishes.filter((d) => !d.archived && d.category === category && matchesSearch(d, query)),
@@ -118,12 +111,7 @@ export function DishPicker({ week, slot, itemIndex, data }: Props) {
       ) : (
         <ul className="mt-3 divide-y divide-stone-100 overflow-hidden rounded-2xl bg-white ring-1 ring-stone-200">
           {dishes.map((d) => {
-            const hints = strict
-              ? [
-                  ...(used.has(d.id!) ? [ITEM_WARNING_LABELS.duplicate] : []),
-                  ...(data.lastWeek.has(d.id!) ? [ITEM_WARNING_LABELS.lastWeek] : []),
-                ]
-              : [];
+            const hints = strict ? warningsFor(data.slots, d.id!, data.lastWeek, position).map(warningText) : [];
             const current = d.id === item.dishId;
             return (
               <li key={d.id}>

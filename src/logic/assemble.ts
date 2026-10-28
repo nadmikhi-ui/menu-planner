@@ -34,6 +34,8 @@ export function usageCounts(slots: SlotDraft[]): Map<number, number> {
  * Picks a random dish of the category that is neither in this week nor cooked last week.
  * If there is none, takes the dish used least this week, then the one unused for the longest
  * time (never-used first) — and reports it as not fresh. `null` if the category is empty.
+ * `prefer` is a soft wish (e.g. another protein than the neighbouring dinners): it only
+ * chooses among equally good candidates and never makes the pick less fresh.
  */
 export function pickDish(
   category: DishCategory,
@@ -41,21 +43,40 @@ export function pickDish(
   used: Map<number, number>,
   exclude: ReadonlySet<number> = new Set(),
   filter: (dish: Dish) => boolean = () => true,
+  prefer: (dish: Dish) => boolean = () => true,
 ): Pick | null {
   const candidates = ctx.dishes.filter(
     (d) => !d.archived && d.category === category && !exclude.has(d.id!) && filter(d),
   );
   if (candidates.length === 0) return null;
+  const preferred = (list: Dish[]) => (list.some(prefer) ? list.filter(prefer) : list);
 
   const fresh = candidates.filter((d) => !used.has(d.id!) && !ctx.lastWeek.has(d.id!));
-  if (fresh.length > 0) return { dish: shuffle(fresh, ctx.rng)[0]!, fresh: true };
+  if (fresh.length > 0) return { dish: shuffle(preferred(fresh), ctx.rng)[0]!, fresh: true };
 
   const usedCount = (d: Dish) => used.get(d.id!) ?? 0;
   const lastUsed = (d: Dish) => ctx.lastUsed.get(d.id!) ?? '';
-  const [best] = shuffle(candidates, ctx.rng).sort(
-    (a, b) => usedCount(a) - usedCount(b) || lastUsed(a).localeCompare(lastUsed(b)),
-  );
-  return { dish: best!, fresh: false };
+  const rank = (a: Dish, b: Dish) => usedCount(a) - usedCount(b) || lastUsed(a).localeCompare(lastUsed(b));
+  const sorted = shuffle(candidates, ctx.rng).sort(rank);
+  const best = sorted.filter((d) => rank(d, sorted[0]!) === 0);
+  return { dish: preferred(best)[0]!, fresh: false };
+}
+
+/** Proteins that should not follow each other in consecutive dinners («не две рыбы подряд»). */
+const ALTERNATING: ReadonlySet<string> = new Set(['meat', 'poultry', 'fish']);
+
+/**
+ * Soft wish for a dinner main: a protein different from the main of the previous and the next
+ * dinner (when already chosen). «Другое» and unset proteins never clash.
+ */
+export function differentProtein(slots: SlotDraft[], slotIndex: number, ctx: PickContext): (dish: Dish) => boolean {
+  const dinners = slots.map((s, i) => ({ s, i })).filter(({ s }) => s.meal === 'dinner');
+  const at = dinners.findIndex(({ i }) => i === slotIndex);
+  if (at < 0) return () => true;
+  const neighbours = [dinners[at - 1], dinners[at + 1]]
+    .map((n) => byId(ctx, n?.s.items.find((it) => it.role === 'main')?.dishId ?? null)?.protein)
+    .filter((p): p is NonNullable<Dish['protein']> => p !== undefined && ALTERNATING.has(p));
+  return (dish) => dish.protein === undefined || !neighbours.includes(dish.protein);
 }
 
 function take(
@@ -63,8 +84,9 @@ function take(
   ctx: PickContext,
   used: Map<number, number>,
   filter?: (dish: Dish) => boolean,
+  prefer?: (dish: Dish) => boolean,
 ): number | null {
-  const pick = pickDish(category, ctx, used, undefined, filter);
+  const pick = pickDish(category, ctx, used, undefined, filter, prefer);
   if (!pick) return null;
   const id = pick.dish.id!;
   used.set(id, (used.get(id) ?? 0) + 1);
@@ -83,13 +105,14 @@ function completeMainCourse(
   ctx: PickContext,
   used: Map<number, number>,
   withSalad: boolean,
+  preferMain?: (dish: Dish) => boolean,
 ): SlotItem[] {
   const find = (role: SlotItem['role']) => placed.find((i) => i.role === role && i.dishId !== null);
   const [side, salad] = [find('side'), find('salad')];
   const main = find('main') ?? {
     role: 'main' as const,
-    // A carried-over side needs a main that is not standalone.
-    dishId: take('main', ctx, used, side ? (d) => !d.standalone : undefined),
+    // A placed side needs a main that is not standalone.
+    dishId: take('main', ctx, used, side ? (d) => !d.standalone : undefined, preferMain),
   };
   const items: SlotItem[] = [main];
   if (!byId(ctx, main.dishId)?.standalone) items.push(side ?? { role: 'side', dishId: take('side', ctx, used) });
@@ -175,13 +198,23 @@ export function placeCarried(slots: SlotDraft[], carried: CarriedDish[], ctx: Pi
  * breakfasts and snacks.
  */
 export function assembleWeek(start: ISODate, ctx: PickContext, carried: CarriedDish[] = []): SlotDraft[] {
-  const slots = weekSkeleton(start);
+  return fillEmpty(weekSkeleton(start), ctx, carried);
+}
+
+/**
+ * «Заполнить только пустые»: keeps every chosen dish and fills the empty positions by the
+ * same rules as a full assembly. Returns new slots in the same order (ids are kept).
+ */
+export function fillEmpty<T extends SlotDraft>(source: T[], ctx: PickContext, carried: CarriedDish[] = []): T[] {
+  const slots = source.map((s) => ({ ...s, items: s.items.map((i) => ({ ...i })) }));
   placeCarried(slots, carried, ctx);
   const used = usageCounts(slots);
 
-  for (const slot of slots) {
-    if (slot.meal === 'dinner') slot.items = completeMainCourse(slot.items, ctx, used, true);
-  }
+  slots.forEach((slot, index) => {
+    if (slot.meal === 'dinner') {
+      slot.items = completeMainCourse(slot.items, ctx, used, true, differentProtein(slots, index, ctx));
+    }
+  });
   for (const slot of slots) {
     if (slot.meal !== 'lunch') continue;
     const soup = slot.items.find((i) => i.role === 'lunch');
@@ -242,7 +275,8 @@ export function rerollItem(
     i === slotIndex ? { ...s, items: s.items.filter((_, j) => j !== itemIndex) } : s,
   );
   const exclude = new Set(item.dishId === null ? [] : [item.dishId]);
-  const pick = pickDish(ROLE_CATEGORY[item.role], ctx, usageCounts(others), exclude);
+  const prefer = item.role === 'main' ? differentProtein(slots, slotIndex, ctx) : undefined;
+  const pick = pickDish(ROLE_CATEGORY[item.role], ctx, usageCounts(others), exclude, undefined, prefer);
   return pick ? applyDish(slots, slotIndex, itemIndex, pick.dish.id!, ctx) : null;
 }
 

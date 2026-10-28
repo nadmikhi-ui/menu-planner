@@ -14,7 +14,7 @@ export function CarryOverPanel({ data, viewing }: { data: WeekData; viewing: Wee
       <h3 className="font-semibold text-sky-950">Перенос на следующую неделю · {items.length}</h3>
       {waitingHere && (
         <p className="mt-1 text-sm text-sky-900">
-          Нажмите «Собрать заново», чтобы поставить их в начало недели, или выберите вручную в нужном слоте.
+          «Заполнить только пустые» или «Пересобрать всё» поставят их в начало недели; можно и выбрать вручную в нужном слоте.
         </p>
       )}
       <ul className="mt-3 space-y-3">

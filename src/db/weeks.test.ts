@@ -189,3 +189,20 @@ describe('«Повторить как черновик» (SPEC §8)', () => {
     await expect(repeatAsDraft(source, '2026-10-26', database)).rejects.toThrow('уже есть');
   });
 });
+
+describe('assembleAndSave «Заполнить только пустые»', () => {
+  it('keeps chosen dishes and slot ids, fills the rest', async () => {
+    await addLibrary();
+    const weekId = await createWeek('2026-11-02', database);
+    const before = await weekSlots(weekId, database);
+    const monday = before.find((s) => s.meal === 'dinner')!;
+    const chosen = (await database.dishes.where('category').equals('main').first())!;
+    await chooseDish(weekId, monday.id!, 0, chosen.id!, seededRng(1), database);
+
+    await assembleAndSave(weekId, seededRng(2), database, 'empty');
+    const after = await weekSlots(weekId, database);
+    expect(after.map((s) => s.id)).toEqual(before.map((s) => s.id));
+    expect(after.find((s) => s.id === monday.id)!.items[0]!.dishId).toBe(chosen.id);
+    expect(after.flatMap((s) => s.items).every((i) => i.dishId !== null)).toBe(true);
+  });
+});

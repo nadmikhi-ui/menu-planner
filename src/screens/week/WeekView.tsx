@@ -5,6 +5,7 @@ import { db, getSettings } from '../../db/db';
 import {
   addLunchSalad,
   assembleAndSave,
+  type AssembleMode,
   changeLunchVariant,
   deleteDraft,
   removeItem,
@@ -15,7 +16,7 @@ import {
 import { formatDay, formatWeekRange, isWeekend } from '../../logic/dates';
 import { queueFor } from '../../logic/carryover';
 import { historyContext } from '../../logic/history';
-import { ITEM_WARNING_LABELS, analyzeWeek, type ItemWarning } from '../../logic/repeats';
+import { analyzeWeek, warningText, type ItemWarning } from '../../logic/repeats';
 import { ROLE_LABELS, lunchVariant, weekDates } from '../../logic/week';
 import { openRoute } from '../../navigation';
 import {
@@ -116,9 +117,11 @@ export function WeekView({ week, path }: { week: Week; path: string[] }) {
     }
   };
 
-  const assemble = () => {
-    if (filled && !window.confirm('Собрать неделю заново? Все выбранные блюда будут заменены.')) return;
-    void run(() => assembleAndSave(weekId));
+  const assemble = (mode: AssembleMode) => {
+    if (mode === 'all' && filled && !window.confirm('Пересобрать всю неделю? Все выбранные блюда будут заменены.')) {
+      return;
+    }
+    void run(() => assembleAndSave(weekId, undefined, undefined, mode));
   };
 
   const approve = () => {
@@ -158,15 +161,41 @@ export function WeekView({ week, path }: { week: Week; path: string[] }) {
         <Badge>{WEEK_STATUS_LABELS[week.status]}</Badge>
       </div>
 
-      {isDraft && (
+      {isDraft && !filled && (
         <button
           type="button"
-          onClick={assemble}
+          onClick={() => assemble('all')}
           disabled={busy}
           className="min-h-12 w-full rounded-xl bg-brand-700 font-semibold text-white active:bg-brand-800 disabled:opacity-60"
         >
-          {filled ? 'Собрать заново' : 'Собрать неделю автоматически'}
+          Собрать неделю автоматически
         </button>
+      )}
+      {isDraft && filled && (
+        <div className="flex flex-col gap-2">
+          {analysis.emptyCount > 0 && (
+            <button
+              type="button"
+              onClick={() => assemble('empty')}
+              disabled={busy}
+              className="min-h-12 rounded-xl bg-brand-700 px-3 font-semibold text-white active:bg-brand-800 disabled:opacity-60"
+            >
+              Заполнить только пустые
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={() => assemble('all')}
+            disabled={busy}
+            className={`min-h-12 rounded-xl px-3 font-medium disabled:opacity-60 ${
+              analysis.emptyCount > 0
+                ? 'text-stone-700 ring-1 ring-stone-300 active:bg-stone-100'
+                : 'bg-brand-700 font-semibold text-white active:bg-brand-800'
+            }`}
+          >
+            Пересобрать всё
+          </button>
+        </div>
       )}
 
       {message && <Notice tone="neutral">{message}</Notice>}
@@ -379,8 +408,8 @@ function MealBlock({
                   </span>
                 )}
                 {itemWarnings.map((w) => (
-                  <span key={w} className="mt-0.5 block text-xs font-medium text-amber-800">
-                    ⚠ {ITEM_WARNING_LABELS[w]}
+                  <span key={w.kind} className="mt-0.5 block text-xs font-medium text-amber-800">
+                    ⚠ {warningText(w)}
                   </span>
                 ))}
               </button>

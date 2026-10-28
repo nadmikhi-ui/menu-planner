@@ -92,3 +92,18 @@ export function formatDate(d: ISODate, reference: ISODate = today()): string {
   const date = parseISODate(d);
   return d.slice(0, 4) === reference.slice(0, 4) ? dayMonthFormat.format(date) : fullDateFormat.format(date);
 }
+
+const WEEKDAY_ON: Record<Weekday, string> = {
+  1: 'в понедельник',
+  2: 'во вторник',
+  3: 'в среду',
+  4: 'в четверг',
+  5: 'в пятницу',
+  6: 'в субботу',
+  0: 'в воскресенье',
+};
+
+/** «во вторник», «в среду» — for phrases like «уже есть во вторник на ужин». */
+export function weekdayOn(d: ISODate): string {
+  return WEEKDAY_ON[weekdayOf(d)];
+}
