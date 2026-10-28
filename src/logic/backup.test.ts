@@ -1,5 +1,14 @@
 import { describe, expect, it } from 'vitest';
-import { TABLE_NAMES, backupFileName, backupSummary, makeBackup, parseBackup, type BackupTables } from './backup';
+import {
+  EXPORT_REMINDER_DAYS,
+  TABLE_NAMES,
+  backupFileName,
+  backupSummary,
+  exportStatus,
+  makeBackup,
+  parseBackup,
+  type BackupTables,
+} from './backup';
 
 const emptyTables = () => Object.fromEntries(TABLE_NAMES.map((n) => [n, []])) as unknown as BackupTables;
 
@@ -59,5 +68,25 @@ describe('backup (SPEC §8)', () => {
     );
     const slots = [{ weekId: 1, items: [] }];
     expect(() => parseBackup(JSON.stringify({ ...backup, tables: { ...backup.tables, slots } }), 1)).toThrow('нет id');
+  });
+});
+
+describe('export reminder (SPEC §8)', () => {
+  const now = new Date(2026, 9, 28, 12);
+
+  it('says so when the data was never exported', () => {
+    expect(exportStatus(undefined, now)).toEqual({ kind: 'never' });
+  });
+
+  it('counts calendar days since the last export', () => {
+    expect(exportStatus(new Date(2026, 9, 28, 1).toISOString(), now)).toEqual({ kind: 'ok', daysAgo: 0 });
+    expect(exportStatus(new Date(2026, 9, 27, 23, 59).toISOString(), now)).toEqual({ kind: 'ok', daysAgo: 1 });
+  });
+
+  it('reminds once a month has passed', () => {
+    const at = (daysAgo: number) => new Date(2026, 9, 28 - daysAgo, 8).toISOString();
+    expect(exportStatus(at(EXPORT_REMINDER_DAYS - 1), now).kind).toBe('ok');
+    expect(exportStatus(at(EXPORT_REMINDER_DAYS), now)).toEqual({ kind: 'due', daysAgo: EXPORT_REMINDER_DAYS });
+    expect(exportStatus(at(90), now).kind).toBe('due');
   });
 });

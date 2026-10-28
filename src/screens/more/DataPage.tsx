@@ -4,6 +4,8 @@ import { Screen } from '../../components/Screen';
 import { Notice } from '../../components/ui';
 import { exportBackup, importBackup } from '../../db/backup';
 import { db } from '../../db/db';
+import { markExported } from '../../db/settings';
+import { BackupStatus } from './BackupStatus';
 import { backupFileName, backupSummary, parseBackup, type Backup } from '../../logic/backup';
 import { formatDate, toISODate } from '../../logic/dates';
 
@@ -27,7 +29,8 @@ export function DataPage() {
     try {
       // On a phone the share sheet lets you save the file to Files or send it.
       if (navigator.canShare?.({ files: [file] })) {
-        await navigator.share({ files: [file], title: 'Меню на неделю — резервная копия' });
+        await navigator.share({ files: [file], title: 'Меню недели — резервная копия' });
+        await markExported(now);
         return;
       }
     } catch (e) {
@@ -39,6 +42,7 @@ export function DataPage() {
     link.download = file.name;
     link.click();
     setTimeout(() => URL.revokeObjectURL(url), 1000);
+    await markExported(now);
     setMessage({ tone: 'info', text: `Файл «${file.name}» сохранён в загрузки.` });
   };
 
@@ -72,6 +76,7 @@ export function DataPage() {
   return (
     <Screen title="Экспорт и импорт" back={{ href: '#/more', label: 'Ещё' }}>
       <div className="space-y-8">
+        <BackupStatus />
         {message && <Notice tone={message.tone}>{message.text}</Notice>}
 
         <section>

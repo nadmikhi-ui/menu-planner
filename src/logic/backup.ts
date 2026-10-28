@@ -1,5 +1,6 @@
 // JSON export / import of all data (SPEC §8).
-import { CATEGORIES } from '../types';
+import { CATEGORIES, type ISODateTime } from '../types';
+import { parseISODate, toISODate } from './dates';
 
 export const BACKUP_APP = 'menu-planner';
 
@@ -84,7 +85,7 @@ export function parseBackup(text: string, currentSchemaVersion: number): Backup 
     throw new Error('Не удалось прочитать файл: это не JSON');
   }
   if (!isObject(raw) || raw.app !== BACKUP_APP || !isObject(raw.tables)) {
-    throw new Error('Это не резервная копия «Меню на неделю»');
+    throw new Error('Это не резервная копия «Меню недели»');
   }
   const version = typeof raw.schemaVersion === 'number' ? raw.schemaVersion : NaN;
   if (!Number.isInteger(version) || version < 1) throw new Error('В файле не указана версия данных');
@@ -124,4 +125,20 @@ export function backupSummary(backup: Backup): BackupSummary {
     freezer: backup.tables.freezer.filter((i) => i.status === 'in_stock').length,
     products: backup.tables.products.length,
   };
+}
+
+/** After this many days without an export the app reminds to make one. */
+export const EXPORT_REMINDER_DAYS = 30;
+
+export type ExportStatus =
+  /** Never exported. */
+  | { kind: 'never' }
+  | { kind: 'ok' | 'due'; daysAgo: number };
+
+/** Calendar days between the last export and `now`; «due» from `EXPORT_REMINDER_DAYS` on. */
+export function exportStatus(lastExportAt: ISODateTime | undefined, now: Date): ExportStatus {
+  if (!lastExportAt) return { kind: 'never' };
+  const last = parseISODate(toISODate(new Date(lastExportAt)));
+  const daysAgo = Math.max(0, Math.round((parseISODate(toISODate(now)).getTime() - last.getTime()) / 86_400_000));
+  return { kind: daysAgo >= EXPORT_REMINDER_DAYS ? 'due' : 'ok', daysAgo };
 }

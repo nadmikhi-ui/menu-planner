@@ -20,3 +20,8 @@ export async function setRepeatPolicy(category: DishCategory, policy: RepeatPoli
 export function setFreezerMaxAge(months: number, database: MenuDB = db) {
   return updateSettings({ freezerMaxAgeMonths: months }, database);
 }
+
+/** Remembers that the data was just saved to a file. */
+export function markExported(now = new Date(), database: MenuDB = db) {
+  return updateSettings({ lastExportAt: now.toISOString() }, database);
+}

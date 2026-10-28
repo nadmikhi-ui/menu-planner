@@ -5,7 +5,7 @@ import { seededRng } from '../logic/random';
 import { analyzeWeek } from '../logic/repeats';
 import { STRICT } from '../logic/test-fixtures';
 import { MenuDB } from './db';
-import { loadDemoDishes, saveDish, setDishArchived, suggestForDish } from './dishes';
+import { deleteDemoDishes, loadDemoDishes, saveDish, setDishArchived, suggestForDish } from './dishes';
 import { assembleAndSave, createWeek, weekSlots } from './weeks';
 
 let database: MenuDB;
@@ -137,6 +137,61 @@ describe('loadDemoDishes', () => {
       const analysis = analyzeWeek(slots, await database.dishes.toArray(), new Set(), STRICT);
       expect(analysis.shortages).toEqual([]);
       expect(analysis.warningCount).toBe(0);
+    } finally {
+      await database.delete();
+    }
+  });
+});
+
+describe('deleteDemoDishes', () => {
+  async function withDemo() {
+    const database = new MenuDB(`test-demo-del-${Math.random()}`);
+    await loadDemoDishes(database);
+    return database;
+  }
+
+  it('removes the demo dishes and leaves the user’s own', async () => {
+    const database = await withDemo();
+    try {
+      await saveDish({ name: 'Мой борщ', category: 'lunch', ingredients: [], note: '', standalone: false }, undefined, database);
+      expect(await database.dishes.filter((d) => !!d.demo).count()).toBe(DEMO_DISHES.length);
+
+      expect(await deleteDemoDishes(database)).toEqual({ deleted: DEMO_DISHES.length, archived: 0 });
+      expect((await database.dishes.toArray()).map((d) => d.name)).toEqual(['Мой борщ']);
+    } finally {
+      await database.delete();
+    }
+  });
+
+  it('keeps a demo dish you edited', async () => {
+    const database = await withDemo();
+    try {
+      const dish = (await database.dishes.where('name').equals('Плов').first())!;
+      await saveDish({ name: 'Плов', category: 'main', ingredients: ['рис', 'баранина'], note: 'мой рецепт', standalone: true }, dish.id, database);
+      expect((await database.dishes.get(dish.id!))!.demo).toBeUndefined();
+
+      await deleteDemoDishes(database);
+      expect((await database.dishes.toArray()).map((d) => d.name)).toEqual(['Плов']);
+    } finally {
+      await database.delete();
+    }
+  });
+
+  it('archives dishes that are already in a week instead of deleting them', async () => {
+    const database = await withDemo();
+    try {
+      const weekId = await createWeek('2026-11-02', database);
+      await assembleAndSave(weekId, seededRng(1), database);
+      const inWeek = new Set((await weekSlots(weekId, database)).flatMap((s) => s.items.map((i) => i.dishId)));
+
+      const { deleted, archived } = await deleteDemoDishes(database);
+      expect(archived).toBe(inWeek.size);
+      expect(deleted).toBe(DEMO_DISHES.length - inWeek.size);
+      const left = await database.dishes.toArray();
+      expect(left.every((d) => d.archived && inWeek.has(d.id!))).toBe(true);
+      // The week still shows its dishes.
+      expect((await weekSlots(weekId, database)).flatMap((s) => s.items).every((i) => i.dishId !== null)).toBe(true);
+      expect(await deleteDemoDishes(database)).toEqual({ deleted: 0, archived: 0 });
     } finally {
       await database.delete();
     }

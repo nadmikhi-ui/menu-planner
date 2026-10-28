@@ -1,9 +1,11 @@
 import { useLiveQuery } from 'dexie-react-hooks';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Screen } from '../../components/Screen';
 import { Chip, Notice } from '../../components/ui';
 import { db, getSettings } from '../../db/db';
-import { loadDemoDishes } from '../../db/dishes';
+import { deleteDemoDishes, loadDemoDishes } from '../../db/dishes';
+import { requestPersistentStorage, storageState, type StorageState } from '../../storage';
+import { BackupStatus } from './BackupStatus';
 import { setFreezerMaxAge, setRepeatPolicy, setWeekStartDay } from '../../db/settings';
 import { FREEZER_MONTHS_MAX, FREEZER_MONTHS_MIN, REPEAT_CATEGORIES, parseFreezerMonths } from '../../logic/settings';
 import { CATEGORY_LABELS, WEEKDAY_LABELS, type Weekday } from '../../types';
@@ -20,6 +22,8 @@ export function SettingsPage() {
     <Screen title="Настройки" back={{ href: '#/more', label: 'Ещё' }}>
       {data && (
         <div className="space-y-8 pb-4">
+          <BackupStatus link />
+
           <section>
             <h2 className="mb-1 font-semibold">Неделя начинается</h2>
             <p className="mb-3 text-sm text-stone-500">
@@ -63,6 +67,8 @@ export function SettingsPage() {
           <FreezerMonths key={data.settings.freezerMaxAgeMonths} value={data.settings.freezerMaxAgeMonths} />
 
           <PlacesAndStaples settings={data.settings} products={data.products} />
+
+          <PersistentStorage />
 
           <DemoDishes />
         </div>
@@ -111,9 +117,45 @@ function FreezerMonths({ value }: { value: number }) {
   );
 }
 
+function PersistentStorage() {
+  const [state, setState] = useState<StorageState | null>(null);
+  useEffect(() => {
+    void storageState().then(setState);
+  }, []);
+
+  if (state === null) return null;
+  return (
+    <section>
+      <h2 className="mb-1 font-semibold">Хранение данных</h2>
+      {state === 'persistent' && (
+        <p className="text-sm text-stone-600">Данные защищены: телефон не удалит их при нехватке места.</p>
+      )}
+      {state === 'unsupported' && (
+        <p className="text-sm text-stone-500">Этот браузер не умеет защищать данные от автоматической очистки. Делайте экспорт.</p>
+      )}
+      {state === 'not-persistent' && (
+        <>
+          <p className="mb-3 text-sm text-stone-500">
+            Браузер может удалить данные, если на телефоне закончится место. Установите приложение на главный экран и
+            попросите защиту.
+          </p>
+          <button
+            type="button"
+            onClick={() => void requestPersistentStorage().then(setState)}
+            className="min-h-12 w-full rounded-xl font-medium text-stone-700 ring-1 ring-stone-300 active:bg-stone-100"
+          >
+            Защитить данные от удаления
+          </button>
+        </>
+      )}
+    </section>
+  );
+}
+
 function DemoDishes() {
   const [message, setMessage] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const demoCount = useLiveQuery(async () => (await db.dishes.toArray()).filter((d) => d.demo).length);
 
   const load = async () => {
     setBusy(true);
@@ -125,21 +167,42 @@ function DemoDishes() {
     }
   };
 
+  const remove = async () => {
+    if (!window.confirm(`Удалить демо-блюда (${demoCount})? Блюда, уже стоящие в неделях, уйдут в архив.`)) return;
+    setBusy(true);
+    try {
+      const { deleted, archived } = await deleteDemoDishes();
+      setMessage(`Удалено: ${deleted}${archived ? `, в архиве: ${archived}` : ''}.`);
+    } finally {
+      setBusy(false);
+    }
+  };
+
   return (
     <section>
       <h2 className="mb-1 font-semibold">Демо-блюда</h2>
       <p className="mb-3 text-sm text-stone-500">
-        По 6–8 блюд в каждом разделе, чтобы сразу проверить сборку меню. Уже существующие блюда не дублируются; потом
-        демо-блюда можно убрать в архив.
+        По 6–8 блюд в каждом разделе, чтобы сразу проверить сборку меню. Уже существующие блюда не дублируются. Блюда,
+        которые вы отредактировали, считаются вашими и при удалении демо-блюд остаются.
       </p>
-      <button
-        type="button"
-        onClick={() => void load()}
-        disabled={busy}
-        className="min-h-12 w-full rounded-xl font-medium text-stone-700 ring-1 ring-stone-300 active:bg-stone-100 disabled:opacity-60"
-      >
-        Загрузить демо-блюда
-      </button>
+      <div className="flex gap-2">
+        <button
+          type="button"
+          onClick={() => void load()}
+          disabled={busy}
+          className="min-h-12 flex-1 rounded-xl font-medium text-stone-700 ring-1 ring-stone-300 active:bg-stone-100 disabled:opacity-60"
+        >
+          Загрузить демо-блюда
+        </button>
+        <button
+          type="button"
+          onClick={() => void remove()}
+          disabled={busy || !demoCount}
+          className="min-h-12 flex-1 rounded-xl font-medium text-red-700 ring-1 ring-red-200 active:bg-red-50 disabled:text-stone-400 disabled:ring-stone-200"
+        >
+          Удалить демо-блюда{demoCount ? ` (${demoCount})` : ''}
+        </button>
+      </div>
       {message && <div className="mt-3"><Notice tone="info">{message}</Notice></div>}
     </section>
   );

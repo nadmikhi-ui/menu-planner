@@ -290,7 +290,7 @@ function DishForm({ dish, presetCategory }: { dish?: Dish; presetCategory?: Dish
                     type="button"
                     onClick={() => update({ ingredients: draft.ingredients.filter((i) => i !== name) })}
                     aria-label={`Убрать «${name}»`}
-                    className="flex h-9 w-9 items-center justify-center text-lg text-stone-400 active:text-stone-700"
+                    className="flex h-11 w-11 items-center justify-center text-lg text-stone-400 active:text-stone-700"
                   >
                     ×
                   </button>
