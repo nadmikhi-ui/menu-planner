@@ -1,7 +1,15 @@
 import { describe, expect, it } from 'vitest';
 import { DEFAULT_PLACES } from '../db/seed';
 import type { CarryOver, Dish, Product, ShoppingItem, Slot, SlotItem } from '../types';
-import { buildShoppingList, groupByPlace, shareText, shoppingWeeks, type ShoppingInput } from './shopping';
+import {
+  buildShoppingList,
+  groupByPlace,
+  menuChanged,
+  neededProducts,
+  shareText,
+  shoppingWeeks,
+  type ShoppingInput,
+} from './shopping';
 import { makeDish } from './test-fixtures';
 
 const borscht = makeDish('lunch', 'Борщ', { ingredients: ['свекла', 'капуста', 'картофель', 'соль'] });
@@ -99,9 +107,10 @@ describe('buildShoppingList (SPEC §7)', () => {
     expect(list.lines.find((l) => l.productName === 'укроп')!.sources).toEqual([{ dishId: prep.id, count: 1, prep: true }]);
   });
 
-  it('keeps skipped dishes: their products are usually bought by then', () => {
-    const slots = [slot([item(borscht, { skipped: { reason: 'ate_out', at: '2026-11-03T00:00:00Z' } })])];
-    expect(names(buildShoppingList(input({ slots })).lines)).toContain('капуста');
+  it('leaves out skipped dishes: they are not cooked', () => {
+    const skipped = { skipped: { reason: 'ate_out' as const, at: '2026-11-03T00:00:00Z' } };
+    const slots = [slot([item(borscht, skipped)]), slot([item(mash)])];
+    expect(names(buildShoppingList(input({ slots })).lines)).toEqual(['картофель', 'молоко']);
   });
 
   it('skips non-existent dishes and empty positions', () => {
@@ -208,5 +217,28 @@ describe('shoppingWeeks', () => {
     });
     const weeks = [week(1, '2026-11-09', 'approved'), week(2, '2026-11-16', 'draft'), week(3, '2026-11-02', 'approved'), week(4, '2026-10-26', 'done')];
     expect(shoppingWeeks(weeks).map((w) => w.id)).toEqual([3, 1]);
+  });
+});
+
+describe('stored list and «Меню изменилось»', () => {
+  it('keeps showing the stored list until it is refreshed, with ticks applied', () => {
+    const { needed } = neededProducts(input());
+    const changed = input({ slots: [slot([item(borscht)])] });
+    const items: ShoppingItem[] = [{ weekId: 1, productName: 'лук', bought: true, haveAtHome: false, manual: false }];
+
+    const stored = buildShoppingList({ ...changed, items }, needed);
+    expect(names(stored.lines)).toEqual(names(buildShoppingList(input()).lines));
+    expect(stored.lines.find((l) => l.productName === 'лук')!.bought).toBe(true);
+    expect(names(buildShoppingList(changed).lines)).toEqual(['свекла', 'капуста', 'картофель']);
+  });
+
+  it('detects a changed menu, but not a reorder or a changed place', () => {
+    const { needed } = neededProducts(input());
+    expect(menuChanged(needed, neededProducts(input()).needed)).toBe(false);
+    expect(menuChanged(needed, [...neededProducts(input()).needed].reverse())).toBe(false);
+    expect(menuChanged(needed, neededProducts(input({ slots: [slot([item(borscht)])] })).needed)).toBe(true);
+    const skipped = { skipped: { reason: 'leftovers' as const, at: '' } };
+    const slots = [slot([item(cutlets, skipped), item(mash), item(salad)]), slot([item(borscht)]), slot([item(cutlets), item(mash)])];
+    expect(menuChanged(needed, neededProducts(input({ slots })).needed)).toBe(true);
   });
 });

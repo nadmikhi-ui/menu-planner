@@ -8,6 +8,7 @@ import {
   addManualItem,
   createPlace,
   deletePlace,
+  refreshShoppingList,
   removeManualItem,
   setItemFlags,
   setProductPlace,
@@ -28,6 +29,8 @@ afterEach(async () => {
 });
 
 const list = async (weekId: number) => buildShoppingList(await shoppingInput(weekId, database));
+const stored = async (weekId: number) =>
+  buildShoppingList(await shoppingInput(weekId, database), (await database.weeks.get(weekId))!.shoppingSnapshot);
 const names = (lines: { productName: string }[]) => lines.map((l) => l.productName).sort();
 
 describe('shopping list in the database (SPEC §7)', () => {
@@ -95,6 +98,30 @@ describe('shopping list in the database (SPEC §7)', () => {
     const after = await list(next);
     expect(names(after.lines)).not.toContain(carriedProduct);
     expect(after.coveredDishIds).toEqual([carry.dishId]);
+  });
+});
+
+describe('refreshing the stored list', () => {
+  it('keeps the old list and the ticks until refreshed', async () => {
+    await saveDish({ ...draft('Омлет', 'breakfast'), ingredients: ['яйца', 'молоко'] }, undefined, database);
+    await saveDish({ ...draft('Сырники', 'breakfast'), ingredients: ['творог', 'яйца'] }, undefined, database);
+    const weekId = await approvedWeekWith(['Омлет']);
+    await refreshShoppingList(weekId, database);
+    await setItemFlags(weekId, 'яйца', { bought: true }, database);
+    expect(names((await stored(weekId)).lines)).toEqual(['молоко', 'яйца']);
+
+    // The menu changes: Омлет → Сырники.
+    const dishes = await database.dishes.toArray();
+    const syrniki = dishes.find((d) => d.name === 'Сырники')!.id!;
+    const slot = (await weekSlots(weekId, database)).find((s) => s.items[0]!.dishId !== null && s.meal === 'breakfast')!;
+    await database.slots.update(slot.id!, { items: [{ role: 'breakfast', dishId: syrniki }] });
+    expect(names((await stored(weekId)).lines)).toEqual(['молоко', 'яйца']);
+    expect(names((await list(weekId)).lines)).toEqual(['творог', 'яйца']);
+
+    await refreshShoppingList(weekId, database);
+    const after = await stored(weekId);
+    expect(names(after.lines)).toEqual(['творог', 'яйца']);
+    expect(after.lines.find((l) => l.productName === 'яйца')!.bought).toBe(true);
   });
 });
 

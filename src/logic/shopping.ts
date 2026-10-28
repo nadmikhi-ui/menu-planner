@@ -44,18 +44,28 @@ export interface ShoppingInput {
   carryOvers: CarryOver[];
 }
 
+/** A product the week's dishes need, with the dishes that need it. */
+export interface NeededProduct {
+  productName: string;
+  sources: ShoppingSource[];
+}
+
 /**
- * Collects all ingredients of the week's dishes and prep tasks without duplicates.
- * Skipped dishes stay in the list: by the time a dish is skipped its products are usually bought.
+ * Ingredients of the week's dishes and prep tasks without duplicates (names are compared
+ * normalized). Skipped dishes are not cooked, so they add nothing; neither do carried-over
+ * dishes whose products are still at home («Продукты ещё есть?» → Да).
  */
-export function buildShoppingList({ slots, prepTasks, dishesById, products, items, carryOvers }: ShoppingInput): ShoppingList {
+export function neededProducts({ slots, prepTasks, dishesById, carryOvers }: ShoppingInput): {
+  needed: NeededProduct[];
+  coveredDishIds: number[];
+} {
   const covered = new Set(carryOvers.filter((c) => c.haveIngredients === true).map((c) => c.id!));
   const coveredDishIds: number[] = [];
   const planned: { dishId: number; prep: boolean }[] = [];
 
   for (const slot of slots) {
     for (const item of slot.items) {
-      if (item.dishId === null) continue;
+      if (item.dishId === null || item.skipped) continue;
       if (item.carryOverId !== undefined && covered.has(item.carryOverId)) {
         if (!coveredDishIds.includes(item.dishId)) coveredDishIds.push(item.dishId);
         continue;
@@ -66,18 +76,45 @@ export function buildShoppingList({ slots, prepTasks, dishesById, products, item
   for (const task of prepTasks) planned.push({ dishId: task.dishId, prep: true });
 
   // productName → sources, in order of first appearance.
-  const needed = new Map<string, ShoppingSource[]>();
+  const byName = new Map<string, ShoppingSource[]>();
   for (const { dishId, prep } of planned) {
     const dish = dishesById.get(dishId);
     if (!dish) continue;
     for (const name of uniqueProducts(dish.ingredients)) {
-      const sources = needed.get(name) ?? [];
+      const sources = byName.get(name) ?? [];
       const source = sources.find((s) => s.dishId === dishId && !!s.prep === prep);
       if (source) source.count++;
       else sources.push(prep ? { dishId, count: 1, prep } : { dishId, count: 1 });
-      needed.set(name, sources);
+      byName.set(name, sources);
     }
   }
+  return { needed: [...byName].map(([productName, sources]) => ({ productName, sources })), coveredDishIds };
+}
+
+/** The list stored when it was last built; a changed menu is compared against it. */
+export type ShoppingSnapshot = NeededProduct[];
+
+const signature = (needed: NeededProduct[]) =>
+  JSON.stringify(
+    [...needed]
+      .sort((a, b) => a.productName.localeCompare(b.productName))
+      .map((n) => [n.productName, [...n.sources].map((s) => [s.dishId, s.count, !!s.prep]).sort()]),
+  );
+
+/** True when the menu now needs something different from what the stored list shows. */
+export function menuChanged(snapshot: ShoppingSnapshot, current: NeededProduct[]): boolean {
+  return signature(snapshot) !== signature(current);
+}
+
+/**
+ * Builds the list. With a `snapshot` the products come from it, not from the current menu,
+ * so the list stays put until the user refreshes it; ticks and places always apply.
+ */
+export function buildShoppingList(input: ShoppingInput, snapshot?: ShoppingSnapshot): ShoppingList {
+  const { products, items } = input;
+  const fresh = neededProducts(input);
+  const coveredDishIds = fresh.coveredDishIds;
+  const needed = new Map((snapshot ?? fresh.needed).map((n) => [n.productName, n.sources]));
 
   const productsByName = new Map(products.map((p) => [p.name, p]));
   const itemsByName = new Map(items.map((i) => [i.productName, i]));

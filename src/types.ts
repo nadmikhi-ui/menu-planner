@@ -66,6 +66,8 @@ export interface Dish {
   addedAt: ISODateTime;
   /** Hidden from pickers, never physically deleted. */
   archived: boolean;
+  /** Added by «Загрузить демо-блюда»; cleared when the dish is edited. */
+  demo?: boolean;
 }
 
 // ---------- Products dictionary (SPEC §7) ----------
@@ -113,6 +115,8 @@ export interface Week {
   createdAt: ISODateTime;
   approvedAt?: ISODateTime;
   completedAt?: ISODateTime;
+  /** Products of the shopping list as last built (SPEC §7); the list is shown from it until refreshed. */
+  shoppingSnapshot?: { productName: string; sources: { dishId: number; count: number; prep?: boolean }[] }[];
 }
 
 /** Meal of the day. Weekdays: breakfast/snack/dinner; Sat & Sun: breakfast/lunch/dinner. */
@@ -246,4 +250,6 @@ export interface Settings {
   places: ShopPlace[];
   repeatPolicy: Record<DishCategory, RepeatPolicy>;
   freezerMaxAgeMonths: number;
+  /** When the data was last exported to a file (SPEC §8). */
+  lastExportAt?: ISODateTime;
 }

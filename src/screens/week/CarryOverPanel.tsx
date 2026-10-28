@@ -42,7 +42,7 @@ export function CarryOverPanel({ data, viewing }: { data: WeekData; viewing: Wee
                   onClick={() => {
                     if (window.confirm('Отменить перенос этого блюда?')) void cancelCarryOver(c.id!);
                   }}
-                  className="min-h-9 shrink-0 px-1 text-sm text-stone-500"
+                  className="min-h-11 shrink-0 px-1 text-sm text-stone-500"
                 >
                   Отменить
                 </button>
@@ -55,7 +55,7 @@ export function CarryOverPanel({ data, viewing }: { data: WeekData; viewing: Wee
                     type="button"
                     aria-pressed={c.haveIngredients === value}
                     onClick={() => void setHaveIngredients(c.id!, c.haveIngredients === value ? undefined : value)}
-                    className={`min-h-9 rounded-full px-3 font-medium ${
+                    className={`min-h-11 min-w-11 rounded-full px-3 font-medium ${
                       c.haveIngredients === value ? 'bg-stone-800 text-white' : 'ring-1 ring-stone-300'
                     }`}
                   >

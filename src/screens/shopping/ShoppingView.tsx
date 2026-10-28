@@ -3,9 +3,17 @@ import { useEffect, useMemo, useState } from 'react';
 import { Notice, inputClass } from '../../components/ui';
 import { setHaveIngredients } from '../../db/carryover';
 import { db, getSettings } from '../../db/db';
-import { addManualItem, setItemFlags, shoppingInput } from '../../db/shopping';
+import { addManualItem, refreshShoppingList, setItemFlags, shoppingInput } from '../../db/shopping';
 import { formatWeekRange } from '../../logic/dates';
-import { buildShoppingList, groupByPlace, isDone, shareText, type ShoppingLine } from '../../logic/shopping';
+import {
+  buildShoppingList,
+  groupByPlace,
+  isDone,
+  menuChanged,
+  neededProducts,
+  shareText,
+  type ShoppingLine,
+} from '../../logic/shopping';
 import { normalizeProductName } from '../../logic/text';
 import { openRoute } from '../../navigation';
 import type { CarryOver, Dish, Week } from '../../types';
@@ -14,8 +22,16 @@ import { SetupSheet } from './SetupSheet';
 
 function useShoppingData(weekId: number) {
   return useLiveQuery(async () => {
-    const [input, settings] = await Promise.all([shoppingInput(weekId), getSettings()]);
-    return { input, settings, list: buildShoppingList(input) };
+    const [input, settings, week] = await Promise.all([shoppingInput(weekId), getSettings(), db.weeks.get(weekId)]);
+    const snapshot = week?.shoppingSnapshot;
+    const current = neededProducts(input).needed;
+    return {
+      input,
+      settings,
+      hasSnapshot: snapshot !== undefined,
+      menuChanged: snapshot !== undefined && menuChanged(snapshot, current),
+      list: buildShoppingList(input, snapshot),
+    };
   }, [weekId]);
 }
 
@@ -41,10 +57,18 @@ export function ShoppingView({ week, path }: { week: Week; path: string[] }) {
   }, [message]);
 
   const groups = useMemo(() => data && groupByPlace(data.list.lines, data.settings.places), [data]);
+
+  // The first time a week's list is opened it is stored as it is.
+  const needsSnapshot = data !== undefined && !data.hasSnapshot;
+  useEffect(() => {
+    if (needsSnapshot) void refreshShoppingList(weekId);
+  }, [needsSnapshot, weekId]);
+
   if (!data || !groups) return null;
 
   const { list, input, settings } = data;
   const left = list.lines.filter((l) => !isDone(l)).length;
+  const bought = list.lines.length - left;
 
   const share = async () => {
     const text = shareText(week.startDate, groups);
@@ -72,9 +96,35 @@ export function ShoppingView({ week, path }: { week: Week; path: string[] }) {
       <div className="flex items-baseline justify-between gap-3">
         <h2 className="text-lg font-semibold">{formatWeekRange(week.startDate)}</h2>
         <span className="text-sm text-stone-500">
-          {list.lines.length === 0 ? 'Список пуст' : left === 0 ? 'Всё куплено' : `Осталось купить: ${left}`}
+          {list.lines.length === 0 ? 'Список пуст' : left === 0 ? 'Всё куплено' : `Куплено ${bought} из ${list.lines.length}`}
         </span>
       </div>
+      {list.lines.length > 0 && (
+        <div
+          role="progressbar"
+          aria-label="Куплено"
+          aria-valuemin={0}
+          aria-valuemax={list.lines.length}
+          aria-valuenow={bought}
+          className="h-1.5 overflow-hidden rounded-full bg-stone-200"
+        >
+          <div className="h-full rounded-full bg-brand-600" style={{ width: `${(bought / list.lines.length) * 100}%` }} />
+        </div>
+      )}
+
+      {data.menuChanged && (
+        <div className="rounded-xl bg-amber-50 px-3.5 py-3 ring-1 ring-amber-200">
+          <p className="font-medium text-amber-950">Меню изменилось, обновить список?</p>
+          <p className="mt-0.5 text-sm text-amber-900">Отметки «куплено» и «есть дома» сохранятся.</p>
+          <button
+            type="button"
+            onClick={() => void refreshShoppingList(weekId)}
+            className="mt-2 min-h-11 w-full rounded-xl bg-amber-800 font-semibold text-white active:bg-amber-900"
+          >
+            Обновить список
+          </button>
+        </div>
+      )}
 
       <div className="flex gap-2">
         <button
@@ -96,7 +146,7 @@ export function ShoppingView({ week, path }: { week: Week; path: string[] }) {
 
       {message && <Notice tone="neutral">{message}</Notice>}
 
-      <CarriedDishes data={data} />
+      <CarriedDishes data={data} weekId={weekId} />
 
       <AddProduct weekId={weekId} lines={list.lines} onMessage={setMessage} />
 
@@ -129,7 +179,7 @@ export function ShoppingView({ week, path }: { week: Week; path: string[] }) {
                 <button
                   type="button"
                   onClick={() => void addManualItem(weekId, line.productName)}
-                  className="min-h-9 shrink-0 rounded-full px-3 text-sm font-medium text-brand-700 ring-1 ring-brand-600"
+                  className="min-h-11 shrink-0 rounded-full px-3 text-sm font-medium text-brand-700 ring-1 ring-brand-600"
                 >
                   + В список
                 </button>
@@ -147,8 +197,10 @@ export function ShoppingView({ week, path }: { week: Week; path: string[] }) {
 
 function ProductRow({ weekId, line, dishesById }: { weekId: number; line: ShoppingLine; dishesById: Map<number, Dish> }) {
   const done = isDone(line);
+  const [open, setOpen] = useState(false);
+  const expandable = line.sources.length > 1;
   return (
-    <li className="flex min-h-14 items-center">
+    <li className="flex min-h-14 items-start">
       <button
         type="button"
         role="checkbox"
@@ -165,17 +217,43 @@ function ProductRow({ weekId, line, dishesById }: { weekId: number; line: Shoppi
           {line.bought && '✓'}
         </span>
       </button>
-      <button
-        type="button"
-        onClick={() => openRoute(`#/shopping/${weekId}/product/${encodeURIComponent(line.productName)}`)}
-        className="min-w-0 flex-1 py-2 text-left"
-      >
-        <span className={`block ${line.bought ? 'text-stone-400 line-through' : done ? 'text-stone-400' : ''}`}>
-          {line.productName}
-          {line.uses > 1 && <span className="ml-1.5 text-sm text-stone-500">×{line.uses}</span>}
-        </span>
-        <span className="block truncate text-xs text-stone-500">{sourcesText(line, dishesById)}</span>
-      </button>
+      <div className="min-w-0 flex-1">
+        <button
+          type="button"
+          onClick={() => openRoute(`#/shopping/${weekId}/product/${encodeURIComponent(line.productName)}`)}
+          className="block min-h-14 w-full py-2 text-left"
+        >
+          <span className={`block ${line.bought ? 'text-stone-400 line-through' : done ? 'text-stone-400' : ''}`}>
+            {line.productName}
+            {line.uses > 1 && <span className="ml-1.5 text-sm text-stone-500">×{line.uses}</span>}
+          </span>
+          <span className="block truncate text-xs text-stone-500">
+            {expandable ? `${line.sources.length} ${line.sources.length < 5 ? 'блюда' : 'блюд'}` : sourcesText(line, dishesById)}
+          </span>
+        </button>
+        {expandable && open && (
+          <ul className="-mt-1 mb-2 space-y-0.5 text-xs text-stone-600">
+            {line.sources.map((s) => (
+              <li key={`${s.dishId}-${s.prep ?? false}`}>
+                {s.prep ? 'заготовка: ' : ''}
+                {dishesById.get(s.dishId)?.name ?? 'блюдо удалено'}
+                {s.count > 1 ? ` ×${s.count}` : ''}
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+      {expandable && (
+        <button
+          type="button"
+          aria-expanded={open}
+          aria-label={open ? 'Скрыть блюда' : 'Показать блюда'}
+          onClick={() => setOpen((v) => !v)}
+          className="flex h-14 w-11 shrink-0 items-center justify-center text-stone-500"
+        >
+          {open ? '▾' : '▸'}
+        </button>
+      )}
       <button
         type="button"
         aria-pressed={line.haveAtHome}
@@ -249,8 +327,13 @@ function AddProduct({
 }
 
 /** Carried-over dishes of this week with the «Продукты ещё есть?» answer (SPEC §5, §7). */
-function CarriedDishes({ data }: { data: ShoppingData }) {
+function CarriedDishes({ data, weekId }: { data: ShoppingData; weekId: number }) {
   const { input } = data;
+  // The answer is given here, on the list itself, so the list follows it at once.
+  const answer = async (c: CarryOver, value: boolean) => {
+    await setHaveIngredients(c.id!, c.haveIngredients === value ? undefined : value);
+    await refreshShoppingList(weekId);
+  };
   const carryOversById = new Map(input.carryOvers.map((c) => [c.id!, c]));
   const carried: CarryOver[] = [];
   for (const slot of input.slots) {
@@ -275,8 +358,8 @@ function CarriedDishes({ data }: { data: ShoppingData }) {
                 key={String(value)}
                 type="button"
                 aria-pressed={c.haveIngredients === value}
-                onClick={() => void setHaveIngredients(c.id!, c.haveIngredients === value ? undefined : value)}
-                className={`min-h-9 rounded-full px-3 font-medium ${
+                onClick={() => void answer(c, value)}
+                className={`min-h-11 min-w-11 rounded-full px-3 font-medium ${
                   c.haveIngredients === value ? 'bg-stone-800 text-white' : 'ring-1 ring-stone-300'
                 }`}
               >

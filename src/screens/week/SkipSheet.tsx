@@ -99,7 +99,7 @@ function SkipForm({
               <button
                 type="button"
                 onClick={() => setSelected(choices.map((c) => c.index))}
-                className="min-h-9 px-2 text-sm font-medium text-brand-700"
+                className="min-h-11 px-2 text-sm font-medium text-brand-700"
               >
                 Весь приём пищи
               </button>

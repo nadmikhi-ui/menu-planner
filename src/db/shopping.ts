@@ -1,5 +1,5 @@
 import { addPlace, movePlace, removePlace, renamePlace } from '../logic/places';
-import type { ShoppingInput } from '../logic/shopping';
+import { neededProducts, type ShoppingInput } from '../logic/shopping';
 import { normalizeProductName } from '../logic/text';
 import type { ShopPlace, ShoppingItem } from '../types';
 import { db, getSettings, type MenuDB } from './db';
@@ -83,6 +83,15 @@ export async function deletePlace(id: string, database: MenuDB = db) {
     await updatePlaces((places) => removePlace(places, id), database);
     await database.products.where('placeId').equals(id).modify({ placeId: OTHER_PLACE_ID });
   });
+}
+
+/**
+ * «Обновить список»: stores what the menu needs now as the week's list. Ticks and hand-added
+ * products are kept, because they belong to products, not to the snapshot.
+ */
+export async function refreshShoppingList(weekId: number, database: MenuDB = db): Promise<void> {
+  const { needed } = neededProducts(await shoppingInput(weekId, database));
+  await database.weeks.update(weekId, { shoppingSnapshot: needed });
 }
 
 /** Everything `buildShoppingList` needs for one week. */

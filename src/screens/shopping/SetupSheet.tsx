@@ -69,7 +69,7 @@ export function PlacesAndStaples({ settings, products }: { settings: Settings; p
                 <button
                   type="button"
                   onClick={() => void run(() => setStaple(p.name, false))}
-                  className="min-h-9 px-1 text-sm text-stone-500"
+                  className="min-h-11 px-1 text-sm text-stone-500"
                 >
                   Убрать
                 </button>
@@ -112,7 +112,7 @@ function PlaceRow({
     }
   };
 
-  const arrow = 'flex h-11 w-9 shrink-0 items-center justify-center text-stone-500 disabled:text-stone-200';
+  const arrow = 'flex h-11 w-11 shrink-0 items-center justify-center text-stone-500 disabled:text-stone-200';
   return (
     <li className="flex items-center gap-1 pl-2 pr-1">
       <input
