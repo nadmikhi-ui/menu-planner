@@ -11,7 +11,9 @@ export function CarryOverPanel({ data, viewing }: { data: WeekData; viewing: Wee
 
   return (
     <section className="rounded-2xl bg-sky-50 p-4 ring-1 ring-sky-200">
-      <h3 className="font-semibold text-sky-950">Перенос на следующую неделю · {items.length}</h3>
+      <h3 className="font-semibold text-sky-950">
+        {viewing.status === 'draft' ? 'Перенесено с прошлой недели' : 'Перенос на следующую неделю'} · {items.length}
+      </h3>
       {waitingHere && (
         <p className="mt-1 text-sm text-sky-900">
           «Заполнить только пустые» или «Пересобрать всё» поставят их в начало недели; можно и выбрать вручную в нужном слоте.

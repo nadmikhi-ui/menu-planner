@@ -1,5 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { historyContext } from '../logic/history';
 import { seededRng } from '../logic/random';
+import { analyzeWeek } from '../logic/repeats';
+import { STRICT } from '../logic/test-fixtures';
 import type { Dish, DishCategory } from '../types';
 import { MenuDB } from './db';
 import {
@@ -204,5 +207,23 @@ describe('assembleAndSave «Заполнить только пустые»', () 
     expect(after.map((s) => s.id)).toEqual(before.map((s) => s.id));
     expect(after.find((s) => s.id === monday.id)!.items[0]!.dishId).toBe(chosen.id);
     expect(after.flatMap((s) => s.items).every((i) => i.dishId !== null)).toBe(true);
+  });
+});
+
+describe('«Повторить как черновик» and the repeat rules', () => {
+  it('flags every dish of the repeated week as «было на прошлой неделе»', async () => {
+    await addLibrary();
+    const source = await createWeek('2026-11-02', database);
+    await assembleAndSave(source, seededRng(1), database);
+    await setWeekStatus(source, 'approved', database);
+    await setWeekStatus(source, 'done', database);
+
+    const copy = await repeatAsDraft(source, '2026-11-09', database);
+    const week = (await database.weeks.get(copy))!;
+    const { lastWeek } = historyContext(await database.weeks.toArray(), await database.slots.toArray(), week);
+    const analysis = analyzeWeek(await weekSlots(copy, database), await database.dishes.toArray(), lastWeek, STRICT);
+    expect(analysis.warningCount).toBeGreaterThan(0);
+    expect(analysis.items.flat(2).every((w) => w.kind === 'lastWeek' || w.kind === 'duplicate')).toBe(true);
+    expect(analysis.items.flat().filter((w) => w.length).length).toBe(analysis.warningCount);
   });
 });
