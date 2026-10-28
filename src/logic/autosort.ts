@@ -38,7 +38,7 @@ const PREP = ['заморозк', 'замороз', 'заморож', 'заго�
  * so specific categories (soup, salad, breakfast) come before generic proteins and sides.
  */
 export const BUILTIN_RULES: KeywordRule[] = [
-  { category: 'prep', name: PREP, ingredients: PREP },
+  { category: 'prep', name: [...PREP, 'зажарк', 'компот', 'рублен зелен'], ingredients: PREP },
   {
     category: 'lunch',
     name: [
@@ -55,7 +55,13 @@ export const BUILTIN_RULES: KeywordRule[] = [
     ],
     ingredients: ['гранол', 'мюсли', 'овсян хлоп'],
   },
-  { category: 'snack', name: ['бутерброд', 'сэндвич', 'сендвич', 'смузи', 'хумус', 'батончик'] },
+  {
+    category: 'snack',
+    name: [
+      'бутерброд', 'сэндвич', 'сендвич', 'смузи', 'хумус', 'батончик', 'йогурт', 'хлебц', 'орех', 'фрукт',
+      'ягод', 'нарезк', 'яблок', 'банан', 'кефир',
+    ],
+  },
   {
     category: 'main',
     standalone: true,

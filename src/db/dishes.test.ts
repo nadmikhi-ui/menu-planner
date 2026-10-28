@@ -1,7 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { DEMO_DISHES } from '../logic/demo';
 import { emptyDraft, type DishDraft } from '../logic/dish';
+import { seededRng } from '../logic/random';
+import { analyzeWeek } from '../logic/repeats';
+import { STRICT } from '../logic/test-fixtures';
 import { MenuDB } from './db';
-import { saveDish, setDishArchived, suggestForDish } from './dishes';
+import { loadDemoDishes, saveDish, setDishArchived, suggestForDish } from './dishes';
+import { assembleAndSave, createWeek, weekSlots } from './weeks';
 
 let database: MenuDB;
 let n = 0;
@@ -93,5 +98,47 @@ describe('setDishArchived', () => {
 
     await setDishArchived(id, false, database);
     expect((await database.dishes.get(id))?.archived).toBe(false);
+  });
+});
+
+describe('loadDemoDishes', () => {
+  it('adds the demo library without learning rules, then adds nothing the second time', async () => {
+    const database = new MenuDB(`test-demo-${Math.random()}`);
+    try {
+      expect(await loadDemoDishes(database)).toBe(DEMO_DISHES.length);
+      expect(await database.dishes.count()).toBe(DEMO_DISHES.length);
+      expect(await database.sortRules.count()).toBe(0);
+      expect(await database.products.where('name').equals('лосось').count()).toBe(1);
+      expect(await loadDemoDishes(database)).toBe(0);
+    } finally {
+      await database.delete();
+    }
+  });
+
+  it('skips dishes that already exist, even archived ones', async () => {
+    const database = new MenuDB(`test-demo-${Math.random()}`);
+    try {
+      const id = await saveDish({ name: 'борщ', category: 'lunch', ingredients: [], note: '', standalone: false }, undefined, database);
+      await setDishArchived(id, true, database);
+      expect(await loadDemoDishes(database)).toBe(DEMO_DISHES.length - 1);
+    } finally {
+      await database.delete();
+    }
+  });
+
+  it('gives enough dishes to assemble a week without shortages', async () => {
+    const database = new MenuDB(`test-demo-${Math.random()}`);
+    try {
+      await loadDemoDishes(database);
+      const weekId = await createWeek('2026-11-02', database);
+      await assembleAndSave(weekId, seededRng(1), database);
+      const slots = await weekSlots(weekId, database);
+      expect(slots.flatMap((s) => s.items).every((i) => i.dishId !== null)).toBe(true);
+      const analysis = analyzeWeek(slots, await database.dishes.toArray(), new Set(), STRICT);
+      expect(analysis.shortages).toEqual([]);
+      expect(analysis.warningCount).toBe(0);
+    } finally {
+      await database.delete();
+    }
   });
 });

@@ -3,6 +3,7 @@ import { useState } from 'react';
 import { Screen } from '../../components/Screen';
 import { Chip, Notice } from '../../components/ui';
 import { db, getSettings } from '../../db/db';
+import { loadDemoDishes } from '../../db/dishes';
 import { setFreezerMaxAge, setRepeatPolicy, setWeekStartDay } from '../../db/settings';
 import { FREEZER_MONTHS_MAX, FREEZER_MONTHS_MIN, REPEAT_CATEGORIES, parseFreezerMonths } from '../../logic/settings';
 import { CATEGORY_LABELS, WEEKDAY_LABELS, type Weekday } from '../../types';
@@ -62,6 +63,8 @@ export function SettingsPage() {
           <FreezerMonths key={data.settings.freezerMaxAgeMonths} value={data.settings.freezerMaxAgeMonths} />
 
           <PlacesAndStaples settings={data.settings} products={data.products} />
+
+          <DemoDishes />
         </div>
       )}
     </Screen>
@@ -104,6 +107,40 @@ function FreezerMonths({ value }: { value: number }) {
         <span className="text-stone-600">мес.</span>
       </label>
       {error && <div className="mt-2"><Notice tone="warning">{error}</Notice></div>}
+    </section>
+  );
+}
+
+function DemoDishes() {
+  const [message, setMessage] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  const load = async () => {
+    setBusy(true);
+    try {
+      const added = await loadDemoDishes();
+      setMessage(added === 0 ? 'Все демо-блюда уже есть в библиотеке.' : `Добавлено блюд: ${added}. Теперь можно собрать неделю.`);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <section>
+      <h2 className="mb-1 font-semibold">Демо-блюда</h2>
+      <p className="mb-3 text-sm text-stone-500">
+        По 6–8 блюд в каждом разделе, чтобы сразу проверить сборку меню. Уже существующие блюда не дублируются; потом
+        демо-блюда можно убрать в архив.
+      </p>
+      <button
+        type="button"
+        onClick={() => void load()}
+        disabled={busy}
+        className="min-h-12 w-full rounded-xl font-medium text-stone-700 ring-1 ring-stone-300 active:bg-stone-100 disabled:opacity-60"
+      >
+        Загрузить демо-блюда
+      </button>
+      {message && <div className="mt-3"><Notice tone="info">{message}</Notice></div>}
     </section>
   );
 }

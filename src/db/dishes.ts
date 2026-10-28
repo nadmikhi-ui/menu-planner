@@ -1,6 +1,7 @@
 import { learnedRule, suggestCategory, type CategorySuggestion } from '../logic/autosort';
 import { draftToDish, type DishDraft } from '../logic/dish';
-import { uniqueProducts } from '../logic/text';
+import { DEMO_DISHES } from '../logic/demo';
+import { normalizeText, uniqueProducts } from '../logic/text';
 import { db, type MenuDB } from './db';
 import { OTHER_PLACE_ID } from './seed';
 
@@ -54,4 +55,19 @@ export async function saveDish(
 
 export async function setDishArchived(id: number, archived: boolean, database: MenuDB = db): Promise<void> {
   await database.dishes.update(id, { archived });
+}
+
+/**
+ * «Загрузить демо-блюда»: adds the demo library, skipping dishes whose name already exists
+ * (also in the archive). Returns how many were added.
+ */
+export async function loadDemoDishes(database: MenuDB = db, now: Date = new Date()): Promise<number> {
+  const existing = new Set((await database.dishes.toArray()).map((d) => normalizeText(d.name)));
+  let added = 0;
+  for (const draft of DEMO_DISHES) {
+    if (existing.has(normalizeText(draft.name))) continue;
+    await saveDish(draft, undefined, database, now);
+    added++;
+  }
+  return added;
 }
