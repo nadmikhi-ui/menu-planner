@@ -48,6 +48,22 @@ export const PREP_SOURCE_LABELS: Record<PrepSource, string> = {
   fresh: 'Заморозить свежее с рынка',
 };
 
+/** Full recipe (SPEC §1): shown on the dish card; `Dish.ingredients` stays the product list for shopping. */
+export interface Recipe {
+  /** Lines with amounts, e.g. «Яйца — 2 шт. (180 г)». */
+  ingredients: string[];
+  /** Cooking steps in order. */
+  steps: string[];
+  /** Per portion. */
+  kcal?: number;
+  proteins?: number;
+  fats?: number;
+  carbs?: number;
+  timeMin?: number;
+  /** «Вариации», «Совет» and similar remarks. */
+  tips?: string;
+}
+
 export interface Dish {
   id?: number;
   name: string;
@@ -55,6 +71,9 @@ export interface Dish {
   /** Product names only, no quantities. */
   ingredients: string[];
   note: string;
+  recipe?: Recipe;
+  /** Where the dish came from, e.g. «Книга ужинов». */
+  source?: string;
   /** Only for `main`. */
   protein?: ProteinType;
   /** Only for `main`: needs no side dish (плов, лазанья…). */
@@ -252,4 +271,6 @@ export interface Settings {
   freezerMaxAgeMonths: number;
   /** When the data was last exported to a file (SPEC §8). */
   lastExportAt?: ISODateTime;
+  /** Version of the recipe-book library already added automatically (SPEC §1.1). */
+  bookLibraryVersion?: number;
 }

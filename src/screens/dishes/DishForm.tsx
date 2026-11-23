@@ -1,11 +1,12 @@
 import { useLiveQuery } from 'dexie-react-hooks';
-import { useMemo, useState, type KeyboardEvent } from 'react';
+import { useMemo, useState } from 'react';
 import { Sheet } from '../../components/Sheet';
 import { Chip, FieldLabel, Notice, inputClass } from '../../components/ui';
 import { db } from '../../db/db';
 import { saveDish, setDishArchived } from '../../db/dishes';
 import { learnedRule, suggestCategory, suggestProtein, type CategorySuggestion } from '../../logic/autosort';
 import { dishToDraft, emptyDraft, findDuplicate, validateDraft, type DishDraft } from '../../logic/dish';
+import { productsFromRecipe } from '../../logic/recipe';
 import { parseIngredients, uniqueProducts } from '../../logic/text';
 import { closeRoute } from '../../navigation';
 import {
@@ -20,6 +21,8 @@ import {
   type PrepType,
   type ProteinType,
 } from '../../types';
+import { IngredientInput } from './IngredientInput';
+import { RecipeSection } from './RecipeSection';
 
 const close = () => closeRoute('#/dishes');
 
@@ -93,37 +96,27 @@ function DishForm({ dish, presetCategory }: { dish?: Dish; presetCategory?: Dish
 
   const canSave = validateDraft(effective).length === 0 && !busy;
   const duplicate = allDishes ? findDuplicate(effective.name, allDishes, dish?.id) : undefined;
+  const sectionChanged =
+    !dish || dish.category !== effective.category || dish.standalone !== effective.standalone;
   const willLearn =
-    effective.category && rules
+    sectionChanged && effective.category && rules
       ? learnedRule(effective.name, suggestion, { category: effective.category, standalone: effective.standalone })
       : null;
   const dirty = pendingIngredient.trim() !== '' || JSON.stringify(draft) !== JSON.stringify(initial);
 
   const update = (patch: Partial<DishDraft>) => setDraft((d) => ({ ...d, ...patch }));
 
-  const addIngredients = (text: string) => {
-    const parsed = parseIngredients(text);
-    if (parsed.length) update({ ingredients: uniqueProducts([...draft.ingredients, ...parsed]) });
-  };
-
-  const onIngredientChange = (value: string) => {
-    // Typing a comma adds what was before it.
-    const lastSeparator = Math.max(value.lastIndexOf(','), value.lastIndexOf(';'));
-    if (lastSeparator >= 0) {
-      addIngredients(value.slice(0, lastSeparator));
-      setPendingIngredient(value.slice(lastSeparator + 1).trimStart());
-    } else {
-      setPendingIngredient(value);
-    }
-  };
-
-  const onIngredientKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === 'Enter') {
-      e.preventDefault();
-      addIngredients(pendingIngredient);
-      setPendingIngredient('');
-    }
-  };
+  // A dish that already has a recipe opens with it right under the name: that's what is read most.
+  const [recipeFirst] = useState(() => !!dish?.recipe);
+  const recipeSection = (
+    <RecipeSection
+      recipe={draft.recipe}
+      onChange={(recipe) => update({ recipe })}
+      onUseProducts={() =>
+        update({ ingredients: uniqueProducts([...draft.ingredients, ...productsFromRecipe(draft.recipe?.ingredients ?? [])]) })
+      }
+    />
+  );
 
   const cancel = () => {
     if (dirty && !window.confirm('Закрыть без сохранения изменений?')) return;
@@ -198,6 +191,8 @@ function DishForm({ dish, presetCategory }: { dish?: Dish; presetCategory?: Dish
             </div>
           )}
         </div>
+
+        {recipeFirst && recipeSection}
 
         <div>
           <FieldLabel>Раздел</FieldLabel>
@@ -277,69 +272,29 @@ function DishForm({ dish, presetCategory }: { dish?: Dish; presetCategory?: Dish
         )}
 
         <div>
-          <FieldLabel htmlFor="dish-ingredient">Ингредиенты</FieldLabel>
-          {draft.ingredients.length > 0 && (
-            <ul className="mb-2 flex flex-wrap gap-2">
-              {draft.ingredients.map((name) => (
-                <li
-                  key={name}
-                  className="flex items-center rounded-full bg-white pl-3 text-sm ring-1 ring-stone-300"
-                >
-                  {name}
-                  <button
-                    type="button"
-                    onClick={() => update({ ingredients: draft.ingredients.filter((i) => i !== name) })}
-                    aria-label={`Убрать «${name}»`}
-                    className="flex h-11 w-11 items-center justify-center text-lg text-stone-400 active:text-stone-700"
-                  >
-                    ×
-                  </button>
-                </li>
-              ))}
-            </ul>
-          )}
-          <div className="flex gap-2">
-            <input
-              id="dish-ingredient"
-              value={pendingIngredient}
-              onChange={(e) => onIngredientChange(e.target.value)}
-              onKeyDown={onIngredientKeyDown}
-              list="product-names"
-              autoComplete="off"
-              enterKeyHint="done"
-              placeholder="Продукт, без количества"
-              className={inputClass}
-            />
-            <button
-              type="button"
-              onClick={() => {
-                addIngredients(pendingIngredient);
-                setPendingIngredient('');
-              }}
-              disabled={!pendingIngredient.trim()}
-              className="min-h-12 shrink-0 rounded-xl bg-stone-200 px-4 font-medium text-stone-800 active:bg-stone-300 disabled:opacity-40"
-            >
-              Добавить
-            </button>
-          </div>
-          <p className="mt-1.5 text-xs text-stone-500">Можно перечислить через запятую.</p>
-          <datalist id="product-names">
-            {products?.map((name) => (
-              <option key={String(name)} value={String(name)} />
-            ))}
-          </datalist>
+          <FieldLabel htmlFor="dish-ingredient">Продукты для покупок</FieldLabel>
+          <IngredientInput
+            value={draft.ingredients}
+            onChange={(ingredients) => update({ ingredients })}
+            pending={pendingIngredient}
+            onPendingChange={setPendingIngredient}
+            products={(products ?? []).map(String)}
+          />
         </div>
 
+        {!recipeFirst && recipeSection}
+
         <div>
-          <FieldLabel htmlFor="dish-note">Заметка / рецепт</FieldLabel>
+          <FieldLabel htmlFor="dish-note">Заметка</FieldLabel>
           <textarea
             id="dish-note"
             value={draft.note}
             onChange={(e) => update({ note: e.target.value })}
-            rows={5}
-            placeholder="Как готовить, откуда рецепт, что подать"
+            rows={3}
+            placeholder="Откуда рецепт, что подать, что понравилось"
             className={inputClass}
           />
+          {draft.source && <p className="mt-1.5 text-xs text-stone-500">Источник: {draft.source}</p>}
         </div>
 
         {error && <Notice tone="warning">{error}</Notice>}

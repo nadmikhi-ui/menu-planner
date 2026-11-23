@@ -35,6 +35,7 @@ import {
 import { CompletePrepSheet, PrepIdeaPicker, PrepTaskList } from '../freezer/PrepTasks';
 import { CarryOverPanel } from './CarryOverPanel';
 import { DishPicker } from './DishPicker';
+import { RecipeSheet } from './RecipeSheet';
 import { SkipSheet } from './SkipSheet';
 
 export interface WeekData {
@@ -237,6 +238,7 @@ export function WeekView({ week, path }: { week: Week; path: string[] }) {
                 skippable={isApproved && !busy}
                 onPick={(itemIndex) => openRoute(`#/week/${weekId}/pick/${slot.id}/${itemIndex}`)}
                 onSkip={(itemIndex) => openRoute(`#/week/${weekId}/skip/${slot.id}/${itemIndex}`)}
+                onRecipe={(dishId) => openRoute(`#/week/${weekId}/recipe/${dishId}`)}
                 onReroll={(itemIndex) => reroll(slot.id!, itemIndex)}
                 onLunchVariant={(variant) => run(() => changeLunchVariant(weekId, slot.id!, variant))}
                 onAddSalad={() => run(() => addLunchSalad(weekId, slot.id!))}
@@ -313,6 +315,9 @@ export function WeekView({ week, path }: { week: Week; path: string[] }) {
       {isApproved && path[0] === 'skip' && routeSlot?.items[routeItem] && (
         <SkipSheet week={week} slot={routeSlot} itemIndex={routeItem} dishesById={data.dishesById} />
       )}
+      {path[0] === 'recipe' && data.dishesById.get(Number(path[1])) && (
+        <RecipeSheet dish={data.dishesById.get(Number(path[1]))!} fallback={`#/week/${weekId}`} />
+      )}
       {path[0] === 'prep-add' && (
         <PrepIdeaPicker week={week} dishes={data.dishes} tasks={data.prepTasks} fallback={`#/week/${weekId}`} />
       )}
@@ -332,6 +337,8 @@ interface MealBlockProps {
   skippable: boolean;
   onPick: (itemIndex: number) => void;
   onSkip: (itemIndex: number) => void;
+  /** Opens the recipe of a dish that has one. */
+  onRecipe: (dishId: number) => void;
   onReroll: (itemIndex: number) => void;
   onLunchVariant: (variant: 'soup' | 'main') => void;
   onAddSalad: () => void;
@@ -346,6 +353,7 @@ function MealBlock({
   skippable,
   onPick,
   onSkip,
+  onRecipe,
   onReroll,
   onLunchVariant,
   onAddSalad,
@@ -413,6 +421,16 @@ function MealBlock({
                   </span>
                 ))}
               </button>
+              {!editable && dish?.recipe && (
+                <button
+                  type="button"
+                  onClick={() => onRecipe(dish.id!)}
+                  aria-label={`Рецепт: ${dish.name}`}
+                  className="min-h-11 shrink-0 px-2 text-sm font-medium text-brand-700"
+                >
+                  Рецепт
+                </button>
+              )}
               {editable && (
                 <button
                   type="button"

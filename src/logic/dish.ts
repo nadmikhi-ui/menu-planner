@@ -1,5 +1,5 @@
 // Dish form ↔ stored dish (SPEC §1).
-import type { Dish, DishCategory, PrepSource, PrepType, ProteinType } from '../types';
+import type { Dish, DishCategory, PrepSource, PrepType, ProteinType, Recipe } from '../types';
 import { cleanName, normalizeText, uniqueProducts } from './text';
 
 /** What the dish form edits. `category` is null until chosen or suggested. */
@@ -12,6 +12,8 @@ export interface DishDraft {
   standalone: boolean;
   prepType?: PrepType;
   prepSource?: PrepSource;
+  recipe?: Recipe;
+  source?: string;
 }
 
 export function emptyDraft(): DishDraft {
@@ -28,7 +30,33 @@ export function dishToDraft(dish: Dish): DishDraft {
     standalone: dish.standalone,
     prepType: dish.prepType,
     prepSource: dish.prepSource,
+    recipe: dish.recipe ? cloneRecipe(dish.recipe) : undefined,
+    source: dish.source,
   };
+}
+
+function cloneRecipe(r: Recipe): Recipe {
+  return { ...r, ingredients: [...r.ingredients], steps: [...r.steps] };
+}
+
+/** Trims lines and drops empty ones; returns undefined if nothing is left to show. */
+export function cleanRecipe(recipe: Recipe | undefined): Recipe | undefined {
+  if (!recipe) return undefined;
+  const lines = (xs: string[]) => xs.map(cleanName).filter(Boolean);
+  const r: Recipe = { ...recipe, ingredients: lines(recipe.ingredients), steps: lines(recipe.steps) };
+  const tips = recipe.tips?.trim();
+  if (tips) r.tips = tips;
+  else delete r.tips;
+  if (!r.ingredients.length && !r.steps.length && !r.tips) return undefined;
+  return r;
+}
+
+/** Text of a textarea → recipe lines: one per line, leading «1.», «•», «-» removed. */
+export function linesFromText(text: string): string[] {
+  return text
+    .split('\n')
+    .map((l) => cleanName(l.replace(/^\s*(?:\d+[.)]|[•·\-–—✓])\s*/, '')))
+    .filter(Boolean);
 }
 
 /** Russian error messages; empty if the draft can be saved. */
@@ -62,6 +90,10 @@ export function draftToDish(draft: DishDraft, existing: Dish | undefined, now: D
   if (isMain && draft.protein) dish.protein = draft.protein;
   if (isPrep && draft.prepType) dish.prepType = draft.prepType;
   if (isPrep && draft.prepSource) dish.prepSource = draft.prepSource;
+  const recipe = cleanRecipe(draft.recipe);
+  if (recipe) dish.recipe = recipe;
+  const source = draft.source ?? existing?.source;
+  if (source) dish.source = source;
   return dish;
 }
 
