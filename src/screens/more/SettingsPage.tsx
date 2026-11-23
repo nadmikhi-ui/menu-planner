@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react';
 import { Screen } from '../../components/Screen';
 import { Chip, Notice } from '../../components/ui';
 import { db, getSettings } from '../../db/db';
+import { importBookLibrary, loadBundledLibrary } from '../../db/books';
 import { deleteDemoDishes, loadDemoDishes } from '../../db/dishes';
 import { requestPersistentStorage, storageState, type StorageState } from '../../storage';
 import { BackupStatus } from './BackupStatus';
@@ -70,6 +71,7 @@ export function SettingsPage() {
 
           <PersistentStorage />
 
+          <BookDishes />
           <DemoDishes />
         </div>
       )}
@@ -148,6 +150,46 @@ function PersistentStorage() {
           </button>
         </>
       )}
+    </section>
+  );
+}
+
+function BookDishes() {
+  const [message, setMessage] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const count = useLiveQuery(async () => (await db.dishes.toArray()).filter((d) => d.recipe && d.source).length);
+
+  const load = async () => {
+    setBusy(true);
+    try {
+      const { added, enriched } = await importBookLibrary(await loadBundledLibrary());
+      setMessage(
+        added + enriched === 0
+          ? 'Все блюда из книг уже есть в библиотеке.'
+          : `Добавлено: ${added}${enriched ? `, получили рецепт: ${enriched}` : ''}.`,
+      );
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <section>
+      <h2 className="mb-1 font-semibold">Рецепты из книг диетолога</h2>
+      <p className="mb-3 text-sm text-stone-500">
+        Завтраки, обеды и ужины с рецептами и КБЖУ, а также идеи заготовок для морозилки. Они добавились автоматически
+        {count ? ` (сейчас блюд с рецептом из книг: ${count})` : ''}. Ненужные блюда можно убрать в архив. Кнопка
+        вернёт блюда, которые вы удалили при импорте данных; уже существующие не дублируются.
+      </p>
+      <button
+        type="button"
+        onClick={() => void load()}
+        disabled={busy}
+        className="min-h-12 w-full rounded-xl font-medium text-stone-700 ring-1 ring-stone-300 active:bg-stone-100 disabled:opacity-60"
+      >
+        Добавить недостающие блюда из книг
+      </button>
+      {message && <div className="mt-3"><Notice tone="info">{message}</Notice></div>}
     </section>
   );
 }

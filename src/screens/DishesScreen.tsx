@@ -136,6 +136,7 @@ function DishRow({ dish }: { dish: Dish }) {
     if (dish.standalone) badges.push('без гарнира');
   }
   if (dish.category === 'prep' && dish.prepType) badges.push(PREP_TYPE_LABELS[dish.prepType]);
+  if (dish.recipe) badges.push('рецепт');
 
   return (
     <button

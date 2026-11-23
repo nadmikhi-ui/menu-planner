@@ -1,0 +1,11 @@
+// Run through vitest from the app: adds `products` to every recipe using the app's own parser.
+import { readFileSync, writeFileSync } from 'node:fs';
+import { it } from 'vitest';
+import { productsFromRecipe } from './logic/recipe';
+
+it('products', () => {
+  const src = process.env.REC_IN!;
+  const d = JSON.parse(readFileSync(src, 'utf8'));
+  for (const r of d) r.products = productsFromRecipe(r.ingredients);
+  writeFileSync(process.env.REC_OUT!, JSON.stringify(d, null, 1));
+});
