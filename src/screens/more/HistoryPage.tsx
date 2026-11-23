@@ -4,7 +4,7 @@ import { EmptyState, Screen } from '../../components/Screen';
 import { Sheet } from '../../components/Sheet';
 import { Badge, FieldLabel, Notice, inputClass } from '../../components/ui';
 import { db, getSettings } from '../../db/db';
-import { repeatAsDraft } from '../../db/weeks';
+import { deleteWeek, repeatAsDraft } from '../../db/weeks';
 import { defaultNewWeekStart, formatWeekRange, today } from '../../logic/dates';
 import { historyList } from '../../logic/history';
 import { closeRoute, openRoute } from '../../navigation';
@@ -32,10 +32,10 @@ export function HistoryPage({ path }: { path: string[] }) {
       ) : (
         <ul className="divide-y divide-stone-100 overflow-hidden rounded-2xl bg-white ring-1 ring-stone-200">
           {weeks.map((w) => (
-            <li key={w.id}>
+            <li key={w.id} className="flex items-stretch">
               <a
                 href={w.status === 'done' ? `#/more/history/${w.id}` : `#/week/${w.id}`}
-                className="flex min-h-14 items-center gap-3 px-4 py-2.5 active:bg-stone-50"
+                className="flex min-h-14 flex-1 items-center gap-3 py-2.5 pl-4 active:bg-stone-50"
               >
                 <span className="flex-1">
                   <span className="block font-medium">{formatWeekRange(w.startDate)}</span>
@@ -43,6 +43,18 @@ export function HistoryPage({ path }: { path: string[] }) {
                 </span>
                 <Badge>{WEEK_STATUS_LABELS[w.status]}</Badge>
               </a>
+              <button
+                type="button"
+                onClick={() => {
+                  if (window.confirm(`Удалить неделю ${formatWeekRange(w.startDate)}? Меню, список покупок и заготовки недели удалятся.`)) {
+                    void deleteWeek(w.id!);
+                  }
+                }}
+                aria-label={`Удалить неделю ${formatWeekRange(w.startDate)}`}
+                className="flex w-12 shrink-0 items-center justify-center text-xl text-stone-400 active:text-red-700"
+              >
+                ×
+              </button>
             </li>
           ))}
         </ul>

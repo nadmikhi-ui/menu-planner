@@ -9,15 +9,16 @@ export interface DishDraft {
   ingredients: string[];
   note: string;
   protein?: ProteinType;
-  standalone: boolean;
   prepType?: PrepType;
   prepSource?: PrepSource;
+  /** Only for preps: names of the dishes it is for (SPEC §6.1). */
+  forDishes?: string[];
   recipe?: Recipe;
   source?: string;
 }
 
 export function emptyDraft(): DishDraft {
-  return { name: '', category: null, ingredients: [], note: '', standalone: false };
+  return { name: '', category: null, ingredients: [], note: '' };
 }
 
 export function dishToDraft(dish: Dish): DishDraft {
@@ -27,9 +28,9 @@ export function dishToDraft(dish: Dish): DishDraft {
     ingredients: [...dish.ingredients],
     note: dish.note,
     protein: dish.protein,
-    standalone: dish.standalone,
     prepType: dish.prepType,
     prepSource: dish.prepSource,
+    forDishes: dish.forDishes ? [...dish.forDishes] : undefined,
     recipe: dish.recipe ? cloneRecipe(dish.recipe) : undefined,
     source: dish.source,
   };
@@ -69,7 +70,7 @@ export function validateDraft(draft: DishDraft): string[] {
 
 /**
  * Builds the stored dish: trims text, normalizes ingredients and drops fields
- * that don't apply to the category (protein/standalone only for mains, prep fields only for preps).
+ * that don't apply to the category (protein only for mains, prep fields only for preps).
  */
 export function draftToDish(draft: DishDraft, existing: Dish | undefined, now: Date): Dish {
   const category = draft.category;
@@ -82,7 +83,6 @@ export function draftToDish(draft: DishDraft, existing: Dish | undefined, now: D
     category,
     ingredients: uniqueProducts(draft.ingredients),
     note: draft.note.trim(),
-    standalone: isMain && draft.standalone,
     addedAt: existing?.addedAt ?? now.toISOString(),
     archived: existing?.archived ?? false,
   };
@@ -90,6 +90,7 @@ export function draftToDish(draft: DishDraft, existing: Dish | undefined, now: D
   if (isMain && draft.protein) dish.protein = draft.protein;
   if (isPrep && draft.prepType) dish.prepType = draft.prepType;
   if (isPrep && draft.prepSource) dish.prepSource = draft.prepSource;
+  if (isPrep && draft.forDishes?.length) dish.forDishes = [...new Set(draft.forDishes.map(cleanName).filter(Boolean))];
   const recipe = cleanRecipe(draft.recipe);
   if (recipe) dish.recipe = recipe;
   const source = draft.source ?? existing?.source;

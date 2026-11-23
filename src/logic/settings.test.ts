@@ -3,7 +3,7 @@ import { REPEAT_CATEGORIES, parseFreezerMonths } from './settings';
 
 describe('settings (SPEC §8)', () => {
   it('offers repeat rules for every category used in a week', () => {
-    expect(REPEAT_CATEGORIES).toEqual(['main', 'side', 'salad', 'breakfast', 'snack', 'lunch']);
+    expect(REPEAT_CATEGORIES).toEqual(['main', 'breakfast', 'lunch']);
   });
 
   it('accepts a freezer storage period of 1–24 whole months', () => {

@@ -10,7 +10,6 @@ const dish = (overrides: Partial<Dish>): Dish => ({
   category: 'main',
   ingredients: ['рис', 'баранина'],
   note: '',
-  standalone: true,
   addedAt: '2026-01-01T00:00:00.000Z',
   archived: false,
   ...overrides,
@@ -19,8 +18,8 @@ const dish = (overrides: Partial<Dish>): Dish => ({
 describe('validateDraft', () => {
   it('requires a name and a category', () => {
     expect(validateDraft(emptyDraft())).toEqual(['Введите название', 'Выберите раздел']);
-    expect(validateDraft({ ...emptyDraft(), name: '  ', category: 'side' })).toEqual(['Введите название']);
-    expect(validateDraft({ ...emptyDraft(), name: 'Гречка', category: 'side' })).toEqual([]);
+    expect(validateDraft({ ...emptyDraft(), name: '  ', category: 'main' })).toEqual(['Введите название']);
+    expect(validateDraft({ ...emptyDraft(), name: 'Гречка', category: 'main' })).toEqual([]);
   });
 });
 
@@ -31,7 +30,6 @@ describe('draftToDish', () => {
     ingredients: ['Курица', ' соус терияки', 'курица', ''],
     note: '  20 минут в духовке  ',
     protein: 'poultry',
-    standalone: false,
     prepType: 'soup',
     prepSource: 'fresh',
   };
@@ -43,22 +41,21 @@ describe('draftToDish', () => {
       ingredients: ['курица', 'соус терияки'],
       note: '20 минут в духовке',
       protein: 'poultry',
-      standalone: false,
       addedAt: now.toISOString(),
       archived: false,
     });
   });
 
   it('drops main-only fields for other categories', () => {
-    const result = draftToDish({ ...draft, category: 'side', standalone: true }, undefined, now);
-    expect(result.standalone).toBe(false);
+    const result = draftToDish({ ...draft, category: 'breakfast' }, undefined, now);
     expect(result).not.toHaveProperty('protein');
     expect(result).not.toHaveProperty('prepType');
   });
 
   it('keeps prep fields only for preps', () => {
-    const result = draftToDish({ ...draft, category: 'prep' }, undefined, now);
-    expect(result).toMatchObject({ prepType: 'soup', prepSource: 'fresh', standalone: false });
+    const result = draftToDish({ ...draft, category: 'prep', forDishes: [' Борщ ', 'Борщ', 'Щи'] }, undefined, now);
+    expect(result).toMatchObject({ prepType: 'soup', prepSource: 'fresh', forDishes: ['Борщ', 'Щи'] });
+    expect(draftToDish({ ...draft, forDishes: ['Борщ'] }, undefined, now)).not.toHaveProperty('forDishes');
     expect(result).not.toHaveProperty('protein');
   });
 

@@ -44,10 +44,8 @@ export async function saveDish(
     await ensureProducts(dish.ingredients, database);
 
     // Only a choice made now is a correction: re-saving an existing dish in its old section teaches nothing.
-    const unchanged = existing && existing.category === dish.category && existing.standalone === dish.standalone;
-    const rule = unchanged
-      ? null
-      : learnedRule(dish.name, suggestion, { category: dish.category, standalone: dish.standalone });
+    const unchanged = existing && existing.category === dish.category;
+    const rule = unchanged ? null : learnedRule(dish.name, suggestion, { category: dish.category });
     if (rule) {
       const old = await database.sortRules.where('keyword').equals(rule.keyword).first();
       const row = { ...rule, createdAt: now.toISOString() };

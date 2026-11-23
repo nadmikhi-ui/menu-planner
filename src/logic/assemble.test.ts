@@ -1,11 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import {
-  addSalad,
+  DISHES_PER_PREP,
   applyDish,
   assembleWeek,
   differentProtein,
   fillEmpty,
   pickDish,
+  placeFromPreps,
   rerollItem,
   setLunchVariant,
   usageCounts,
@@ -26,19 +27,20 @@ const itemsOf = (slots: SlotDraft[], meal: SlotDraft['meal']) =>
 describe('assembleWeek — structure (SPEC §3)', () => {
   const slots = assembleWeek(START, context(fullLibrary()));
 
-  it('gives weekdays breakfast, snack and dinner, weekends breakfast, lunch and dinner', () => {
+  it('gives weekdays breakfast and dinner, weekends breakfast, lunch and dinner', () => {
     const mealsOn = (date: string) => slots.filter((s) => s.date === date).map((s) => s.meal);
-    expect(mealsOn('2026-11-02')).toEqual(['breakfast', 'snack', 'dinner']);
-    expect(mealsOn('2026-11-06')).toEqual(['breakfast', 'snack', 'dinner']);
+    expect(mealsOn('2026-11-02')).toEqual(['breakfast', 'dinner']);
+    expect(mealsOn('2026-11-06')).toEqual(['breakfast', 'dinner']);
     expect(mealsOn('2026-11-07')).toEqual(['breakfast', 'lunch', 'dinner']);
     expect(mealsOn('2026-11-08')).toEqual(['breakfast', 'lunch', 'dinner']);
-    expect(slots).toHaveLength(21);
+    expect(slots).toHaveLength(16);
   });
 
-  it('fills dinner with main, side and salad', () => {
+  it('fills every dinner with one main dish', () => {
     for (const slot of slots.filter((s) => s.meal === 'dinner')) {
-      expect(slot.items.map((i) => i.role)).toEqual(['main', 'side', 'salad']);
-      expect(slot.items.every((i) => i.dishId !== null)).toBe(true);
+      expect(slot.items).toHaveLength(1);
+      expect(slot.items[0]!.role).toBe('main');
+      expect(slot.items[0]!.dishId).not.toBeNull();
     }
   });
 
@@ -62,28 +64,18 @@ describe('assembleWeek — structure (SPEC §3)', () => {
   });
 });
 
-describe('assembleWeek — standalone mains and lunches', () => {
-  it('skips the side for a standalone main but keeps the salad', () => {
-    const lib = [
-      ...makeDishes('main', 'Плов', 9, { standalone: true }),
-      ...makeDishes('side', 'Гарнир', 9),
-      ...makeDishes('salad', 'Салат', 9),
-    ];
-    const dinners = assembleWeek(START, context(lib)).filter((s) => s.meal === 'dinner');
-    for (const d of dinners) expect(d.items.map((i) => i.role)).toEqual(['main', 'salad']);
-  });
-
-  it('uses main + side for lunch when there are no «Обед» dishes, without repeating dinners', () => {
-    const lib = [...makeDishes('main', 'Основное', 9), ...makeDishes('side', 'Гарнир', 9), ...makeDishes('salad', 'Салат', 7)];
+describe('assembleWeek — weekend lunches', () => {
+  it('uses a main for lunch when there are no «Обед» dishes, without repeating dinners', () => {
+    const lib = [...makeDishes('main', 'Основное', 9), ...makeDishes('breakfast', 'Завтрак', 7)];
     const slots = assembleWeek(START, context(lib));
     const lunches = itemsOf(slots, 'lunch');
-    expect(lunches.map((i) => i.role)).toEqual(['main', 'side', 'main', 'side']);
+    expect(lunches.map((i) => i.role)).toEqual(['main', 'main']);
 
     const dinnerIds = new Set(itemsOf(slots, 'dinner').map((i) => i.dishId));
     for (const item of lunches) expect(dinnerIds.has(item.dishId)).toBe(false);
   });
 
-  it('falls back to main + side when soups were all cooked last week', () => {
+  it('falls back to a main when soups were all cooked last week', () => {
     const soups = makeDishes('lunch', 'Суп', 2);
     const lib = [...fullLibrary().filter((d) => d.category !== 'lunch'), ...soups];
     const slots = assembleWeek(START, context(lib, { lastWeek: new Set(soups.map((s) => s.id!)) }));
@@ -101,43 +93,41 @@ describe('assembleWeek — repeat rules (SPEC §4)', () => {
   });
 
   it('takes the longest-unused dishes when a category runs short, and flags it', () => {
-    const sides = makeDishes('side', 'Гарнир', 4);
-    const [s1, s2, s3, s4] = sides.map((d) => d.id!);
-    const lib = [...fullLibrary().filter((d) => d.category !== 'side'), ...sides];
-    const lastWeek = new Set([s1!, s2!]);
+    const breakfasts = makeDishes('breakfast', 'Завтрак', 4);
+    const [b1, b2, b3, b4] = breakfasts.map((d) => d.id!);
+    const lib = [...fullLibrary().filter((d) => d.category !== 'breakfast'), ...breakfasts];
+    const lastWeek = new Set([b1!, b2!]);
     const lastUsed = new Map([
-      [s1!, '2026-10-30'],
-      [s2!, '2026-10-27'],
+      [b1!, '2026-10-30'],
+      [b2!, '2026-10-27'],
     ]);
     const slots = assembleWeek(START, context(lib, { lastWeek, lastUsed }));
-    const used = itemsOf(slots, 'dinner')
-      .filter((i) => i.role === 'side')
-      .map((i) => i.dishId);
+    const used = itemsOf(slots, 'breakfast').map((i) => i.dishId);
 
-    // Fresh s3, s4 first; then last week's s2 (older) before s1; then repeats.
-    expect(used.slice(0, 7).sort()).toEqual([s1, s2, s2, s3, s3, s4, s4].sort());
+    // Fresh b3, b4 first; then last week's b2 (older) before b1; then repeats.
+    expect(used.slice(0, 7).sort()).toEqual([b1, b2, b2, b3, b3, b4, b4].sort());
     const analysis = analyzeWeek(slots, lib, lastWeek, STRICT);
-    expect(analysis.shortages).toEqual(['side']);
+    expect(analysis.shortages).toEqual(['breakfast']);
     expect(analysis.warningCount).toBeGreaterThan(0);
   });
 
   it('shows no warnings for a relaxed category', () => {
-    const lib = [...fullLibrary().filter((d) => d.category !== 'side'), ...makeDishes('side', 'Гарнир', 2)];
+    const lib = [...fullLibrary().filter((d) => d.category !== 'breakfast'), ...makeDishes('breakfast', 'Завтрак', 2)];
     const slots = assembleWeek(START, context(lib));
-    const analysis = analyzeWeek(slots, lib, new Set(), { ...STRICT, side: 'relaxed' });
+    const analysis = analyzeWeek(slots, lib, new Set(), { ...STRICT, breakfast: 'relaxed' });
     expect(analysis).toMatchObject({ warningCount: 0, shortages: [] });
   });
 
   it('leaves positions empty when a category has no dishes', () => {
-    const lib = fullLibrary().filter((d) => d.category !== 'snack');
+    const lib = fullLibrary().filter((d) => d.category !== 'breakfast');
     const slots = assembleWeek(START, context(lib));
-    expect(itemsOf(slots, 'snack').every((i) => i.dishId === null)).toBe(true);
-    expect(analyzeWeek(slots, lib, new Set(), STRICT)).toMatchObject({ emptyCount: 5, shortages: ['snack'] });
+    expect(itemsOf(slots, 'breakfast').every((i) => i.dishId === null)).toBe(true);
+    expect(analyzeWeek(slots, lib, new Set(), STRICT)).toMatchObject({ emptyCount: 7, shortages: ['breakfast'] });
   });
 
   it('ignores archived dishes', () => {
-    const archived = makeDish('snack', 'Старый перекус', { archived: true });
-    expect(pickDish('snack', context([archived]), new Map())).toBeNull();
+    const archived = makeDish('breakfast', 'Старый завтрак', { archived: true });
+    expect(pickDish('breakfast', context([archived]), new Map())).toBeNull();
   });
 });
 
@@ -148,56 +138,41 @@ describe('slot editing', () => {
   const dinner = slots.findIndex((s) => s.meal === 'dinner');
 
   it('rerollItem picks a different dish of the same category', () => {
-    const before = slots[dinner]!.items[2]!.dishId; // salad
-    const items = rerollItem(slots, dinner, 2, ctx)!;
-    expect(items[2]!.dishId).not.toBe(before);
-    expect(lib.find((d) => d.id === items[2]!.dishId)?.category).toBe('salad');
+    const before = slots[dinner]!.items[0]!.dishId;
+    const items = rerollItem(slots, dinner, 0, ctx)!;
+    expect(items[0]!.dishId).not.toBe(before);
+    expect(lib.find((d) => d.id === items[0]!.dishId)?.category).toBe('main');
   });
 
   it('rerollItem prefers dishes not yet in the week', () => {
-    const items = rerollItem(slots, dinner, 2, ctx)!;
-    expect(usageCounts(slots).has(items[2]!.dishId!)).toBe(false);
+    const items = rerollItem(slots, dinner, 0, ctx)!;
+    expect(usageCounts(slots).has(items[0]!.dishId!)).toBe(false);
   });
 
   it('rerollItem returns null when there is no other dish', () => {
-    const solo = makeDish('snack', 'Единственный');
-    const one = [{ date: START, meal: 'snack' as const, items: [{ role: 'snack' as const, dishId: solo.id! }] }];
+    const solo = makeDish('breakfast', 'Единственный');
+    const one = [{ date: START, meal: 'breakfast' as const, items: [{ role: 'breakfast' as const, dishId: solo.id! }] }];
     expect(rerollItem(one, 0, 0, context([solo]))).toBeNull();
-  });
-
-  it('applyDish drops the side for a standalone main and restores it for a regular one', () => {
-    const plov = makeDish('main', 'Плов', { standalone: true });
-    const c = context([...lib, plov]);
-    const withPlov = applyDish(slots, dinner, 0, plov.id!, c);
-    expect(withPlov.map((i) => i.role)).toEqual(['main', 'salad']);
-
-    const edited = slots.map((s, i) => (i === dinner ? { ...s, items: withPlov } : s));
-    const regular = lib.find((d) => d.category === 'main' && !usageCounts(slots).has(d.id!))!;
-    const back = applyDish(edited, dinner, 0, regular.id!, c);
-    expect(back.map((i) => i.role)).toEqual(['main', 'side', 'salad']);
-    expect(back[1]!.dishId).not.toBeNull();
   });
 
   it('applyDish allows a manual repeat but analyzeWeek flags it', () => {
     const otherDinner = slots.findIndex((s, i) => s.meal === 'dinner' && i !== dinner);
-    const repeated = slots[otherDinner]!.items[2]!.dishId!;
-    const items = applyDish(slots, dinner, 2, repeated, ctx);
+    const repeated = slots[otherDinner]!.items[0]!.dishId!;
+    const items = applyDish(slots, dinner, 0, repeated, ctx);
     const edited = slots.map((s, i) => (i === dinner ? { ...s, items } : s));
     const analysis = analyzeWeek(edited, lib, new Set(), STRICT);
     const at = (i: number) => ({ date: slots[i]!.date, meal: 'dinner' });
-    expect(analysis.items[dinner]![2]).toEqual([{ kind: 'duplicate', others: [at(otherDinner)] }]);
-    expect(analysis.items[otherDinner]![2]).toEqual([{ kind: 'duplicate', others: [at(dinner)] }]);
+    expect(analysis.items[dinner]![0]).toEqual([{ kind: 'duplicate', others: [at(otherDinner)] }]);
+    expect(analysis.items[otherDinner]![0]).toEqual([{ kind: 'duplicate', others: [at(dinner)] }]);
     expect(analysis.warningCount).toBe(2);
   });
 
-  it('setLunchVariant switches between soup and main + side; addSalad adds the optional salad', () => {
+  it('setLunchVariant switches between a «Обед» dish and a main', () => {
     const lunch = slots.findIndex((s) => s.meal === 'lunch');
     const asMain = setLunchVariant(slots, lunch, 'main', ctx);
-    expect(asMain.map((i) => i.role)).toEqual(['main', 'side']);
-    expect(asMain.every((i) => i.dishId !== null)).toBe(true);
-
+    expect(asMain.map((i) => i.role)).toEqual(['main']);
+    expect(asMain[0]!.dishId).not.toBeNull();
     const edited = slots.map((s, i) => (i === lunch ? { ...s, items: asMain } : s));
-    expect(addSalad(edited, lunch, ctx).map((i) => i.role)).toEqual(['main', 'side', 'salad']);
     expect(setLunchVariant(edited, lunch, 'soup', ctx).map((i) => i.role)).toEqual(['lunch']);
   });
 });
@@ -218,10 +193,10 @@ describe('warning texts (SPEC §4)', () => {
     expect(
       placesText([
         { date: '2026-11-02', meal: 'breakfast' },
-        { date: '2026-11-04', meal: 'snack' },
+        { date: '2026-11-04', meal: 'dinner' },
         { date: '2026-11-07', meal: 'lunch' },
       ]),
-    ).toBe('в понедельник на завтрак, в среду на перекус и в субботу на обед');
+    ).toBe('в понедельник на завтрак, в среду на ужин и в субботу на обед');
     expect(warningText({ kind: 'duplicate', others: [{ date: '2026-11-08', meal: 'dinner' }] })).toBe(
       'Уже есть в воскресенье на ужин',
     );
@@ -240,7 +215,6 @@ describe('warning texts (SPEC §4)', () => {
 });
 
 describe('protein alternation in dinners', () => {
-  const sides = makeDishes('side', 'Гарнир', 8);
   const proteins = ['fish', 'meat', 'poultry'] as const;
   const mains = proteins.flatMap((protein) => makeDishes('main', protein, 4, { protein }));
   const dinnerProteins = (slots: SlotDraft[], lib: Dish[]) =>
@@ -249,7 +223,7 @@ describe('protein alternation in dinners', () => {
       .map((s) => lib.find((d) => d.id === s.items[0]!.dishId)?.protein);
 
   it('never puts the same protein in two dinners in a row when there is a choice', () => {
-    const lib = [...mains, ...sides, ...makeDishes('salad', 'Салат', 8)];
+    const lib = [...mains, ...makeDishes('lunch', 'Суп', 4)];
     for (let seed = 1; seed <= 30; seed++) {
       const p = dinnerProteins(assembleWeek(START, context(lib, { rng: seededRng(seed) })), lib);
       for (let i = 1; i < p.length; i++) expect(p[i], `seed ${seed}, dinner ${i}`).not.toBe(p[i - 1]);
@@ -258,9 +232,9 @@ describe('protein alternation in dinners', () => {
 
   it('prefers freshness over alternation: with only fish left, fish follows fish', () => {
     const fish = makeDishes('main', 'Рыба', 7, { protein: 'fish' });
-    const lib = [...fish, ...sides];
+    const lib = [...fish];
     const slots = assembleWeek(START, context(lib));
-    expect(new Set(itemsOf(slots, 'dinner').filter((i) => i.role === 'main').map((i) => i.dishId)).size).toBe(7);
+    expect(new Set(itemsOf(slots, 'dinner').map((i) => i.dishId)).size).toBe(7);
   });
 
   it('treats «Другое» and an unset protein as compatible with anything', () => {
@@ -277,7 +251,7 @@ describe('protein alternation in dinners', () => {
   });
 
   it('rerolling a dinner main also avoids the neighbours’ protein', () => {
-    const lib = [...mains, ...sides];
+    const lib = [...mains];
     const slots: SlotDraft[] = [
       { date: '2026-11-02', meal: 'dinner', items: [{ role: 'main', dishId: mains[0]!.id! }] }, // fish
       { date: '2026-11-03', meal: 'dinner', items: [{ role: 'main', dishId: mains[4]!.id! }] }, // meat
@@ -319,7 +293,7 @@ describe('fillEmpty («Заполнить только пустые»)', () => {
     const full = assembleWeek(START, context(lib));
     const mondayDinner = full.findIndex((s) => s.meal === 'dinner');
     full[mondayDinner]!.items[0]!.dishId = null;
-    const carriedMain = lib.find((d) => d.category === 'main' && !d.standalone && !usageCounts(full).has(d.id!))!;
+    const carriedMain = lib.find((d) => d.category === 'main' && !usageCounts(full).has(d.id!))!;
     const filled = fillEmpty(full, context(lib), [{ carryOverId: 5, dishId: carriedMain.id! }]);
     expect(filled[mondayDinner]!.items[0]).toEqual({ role: 'main', dishId: carriedMain.id, carryOverId: 5 });
   });
@@ -344,5 +318,47 @@ describe('2-week rule and skipped dishes (SPEC §4–5)', () => {
     const saturday = slots.find((s) => s.date === '2026-11-07' && s.meal === 'lunch')!;
     expect(saturday.items[0]!.dishId).toBe(soups[1]!.id);
     expect(analyzeWeek(slots, soups, history.lastWeek, STRICT).items[slots.indexOf(saturday)]![0]).toEqual([]);
+  });
+});
+
+describe('preps of earlier weeks (SPEC §6.1)', () => {
+  const lib = fullLibrary();
+  const mains = lib.filter((d) => d.category === 'main');
+  const breakfasts = lib.filter((d) => d.category === 'breakfast');
+  const meatballs = { prepId: 900, name: 'Фрикадельки', dishIds: new Set(mains.slice(0, 5).map((d) => d.id!)) };
+  const berries = { prepId: 901, name: 'Ягоды', dishIds: new Set(breakfasts.slice(0, 1).map((d) => d.id!)) };
+
+  it(`puts up to ${DISHES_PER_PREP} dishes for each available prep into the week`, () => {
+    for (let seed = 1; seed <= 20; seed++) {
+      const slots = assembleWeek(START, context(lib, { rng: seededRng(seed), supplies: [meatballs, berries] }));
+      const used = ids(slots);
+      // At least the prep's dishes; the random fill may pick another one of them too.
+      expect(used.filter((id) => meatballs.dishIds.has(id)).length, `seed ${seed}`).toBeGreaterThanOrEqual(DISHES_PER_PREP);
+      expect(used.filter((id) => berries.dishIds.has(id))).toHaveLength(1);
+      expect(new Set(used).size).toBe(used.length);
+    }
+  });
+
+  it('puts a main for a prep into a dinner', () => {
+    const slots = assembleWeek(START, context(lib, { supplies: [meatballs] }));
+    const placed = slots.filter((s) => s.items.some((i) => i.dishId !== null && meatballs.dishIds.has(i.dishId)));
+    for (const s of placed) expect(s.meal).toBe('dinner');
+  });
+
+  it('does not bring back a dish cooked last week just because of a prep', () => {
+    const lastWeek = new Set(meatballs.dishIds);
+    const slots = assembleWeek(START, context(lib, { lastWeek, supplies: [meatballs] }));
+    expect(ids(slots).some((id) => meatballs.dishIds.has(id))).toBe(false);
+  });
+
+  it('counts dishes for the prep already chosen by hand', () => {
+    const full = assembleWeek(START, context(lib));
+    const mondayDinner = full.findIndex((s) => s.meal === 'dinner');
+    const chosen = [...meatballs.dishIds][0]!;
+    const partial = full.map((s, i) =>
+      i === mondayDinner ? { ...s, items: [{ role: 'main' as const, dishId: chosen }] } : { ...s, items: s.items.map((it) => ({ ...it, dishId: null })) },
+    );
+    placeFromPreps(partial, context(lib, { supplies: [meatballs] }), usageCounts(partial));
+    expect(ids(partial).filter((id) => meatballs.dishIds.has(id))).toHaveLength(DISHES_PER_PREP);
   });
 });

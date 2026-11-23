@@ -55,23 +55,6 @@ describe('assembleWeek with carried-over dishes (SPEC §5)', () => {
     expect(dinners[1]!.items[0]!.dishId).toBe(m2!.id);
   });
 
-  it('keeps the dinner without a side for a carried standalone main', () => {
-    const plov = makeDish('main', 'Плов', { standalone: true });
-    const slots = assembleWeek(START, context([...lib, plov]), [{ carryOverId: 1, dishId: plov.id! }]);
-    expect(slots.find((s) => s.meal === 'dinner')!.items.map((i) => i.role)).toEqual(['main', 'salad']);
-  });
-
-  it('pairs a carried side with a main that needs one', () => {
-    const plovs = Array.from({ length: 20 }, (_, i) => makeDish('main', `Плов ${i}`, { standalone: true }));
-    const regular = makeDish('main', 'Котлеты');
-    const side = first('side');
-    const dishes = [...lib.filter((d) => d.category !== 'main'), ...plovs, regular];
-    const slots = assembleWeek(START, context(dishes), [{ carryOverId: 1, dishId: side.id! }]);
-    const dinner = slots.find((s) => s.meal === 'dinner')!;
-    expect(dinner.items.map((i) => i.dishId)).toContain(side.id);
-    expect(dinner.items[0]!.dishId).toBe(regular.id);
-  });
-
   it('does not flag carried dishes as cooked last week', () => {
     const main = first('main');
     const slots = assembleWeek(START, context(lib), [{ carryOverId: 1, dishId: main.id! }]);
@@ -134,7 +117,7 @@ describe('placementPatches', () => {
         carry(4, 13, { status: 'placed', placedWeekId: 7 }),
       ],
       7,
-      [...slots, { items: [{ role: 'side', dishId: 13, carryOverId: 4 }] }],
+      [...slots, { items: [{ role: 'main', dishId: 13, carryOverId: 4 }] }],
     );
     expect(patches).toEqual([
       { id: 1, status: 'placed', placedWeekId: 7 },
@@ -149,10 +132,11 @@ describe('skips', () => {
     weekId: 1,
     date: '2026-11-04',
     meal: 'dinner',
+    // A meal is one dish now; several positions still behave the same way.
     items: [
       { role: 'main', dishId: 10 },
-      { role: 'side', dishId: 11 },
-      { role: 'salad', dishId: null },
+      { role: 'lunch', dishId: 11 },
+      { role: 'main', dishId: null },
     ],
   };
 
@@ -170,7 +154,7 @@ describe('skips', () => {
     const created = carryOversForSkip(skipped, [0, 1, 2], [], NOW);
     expect(created.map((c) => [c.dishId, c.role, c.status])).toEqual([
       [10, 'main', 'pending'],
-      [11, 'side', 'pending'],
+      [11, 'lunch', 'pending'],
     ]);
     expect(carryOversForSkip(skipped, [0], [carry(1, 10, { fromSlotId: 5 })], NOW)).toEqual([]);
   });

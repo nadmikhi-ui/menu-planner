@@ -7,40 +7,32 @@ export type SlotDraft = Omit<Slot, 'id' | 'weekId'>;
 
 export const ROLE_CATEGORY: Record<SlotRole, DishCategory> = {
   main: 'main',
-  side: 'side',
-  salad: 'salad',
   breakfast: 'breakfast',
-  snack: 'snack',
   lunch: 'lunch',
 };
 
 export const ROLE_LABELS: Record<SlotRole, string> = {
   main: 'Основное',
-  side: 'Гарнир',
-  salad: 'Салат',
   breakfast: 'Завтрак',
-  snack: 'Перекус',
   lunch: 'Обед',
 };
 
-/** Weekdays: breakfast, snack, dinner. Weekend: breakfast, full lunch, dinner. */
+/** Weekdays: breakfast and dinner. Weekend: breakfast, full lunch, dinner. */
 export function mealsFor(date: ISODate): MealType[] {
-  return isWeekend(date) ? ['breakfast', 'lunch', 'dinner'] : ['breakfast', 'snack', 'dinner'];
+  return isWeekend(date) ? ['breakfast', 'lunch', 'dinner'] : ['breakfast', 'dinner'];
 }
 
 const empty = (role: SlotRole): SlotItem => ({ role, dishId: null });
 
-/** Items of an unfilled meal. A weekend lunch starts as the «soup» variant. */
+/** Items of an unfilled meal: one dish each. A weekend lunch starts as the «soup» variant. */
 export function emptyItems(meal: MealType): SlotItem[] {
   switch (meal) {
     case 'breakfast':
       return [empty('breakfast')];
-    case 'snack':
-      return [empty('snack')];
     case 'lunch':
       return [empty('lunch')];
     case 'dinner':
-      return [empty('main'), empty('side'), empty('salad')];
+      return [empty('main')];
   }
 }
 
@@ -52,7 +44,7 @@ export function weekSkeleton(start: ISODate): SlotDraft[] {
   return weekDates(start).flatMap((date) => mealsFor(date).map((meal) => ({ date, meal, items: emptyItems(meal) })));
 }
 
-/** Weekend lunch is either a «Обед» dish (soup etc.) or main + side (+ optional salad). */
+/** Weekend lunch is either a «Обед» dish (soup etc.) or a main dish. */
 export type LunchVariant = 'soup' | 'main';
 
 export function lunchVariant(items: SlotItem[]): LunchVariant {

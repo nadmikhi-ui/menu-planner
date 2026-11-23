@@ -4,7 +4,6 @@ import { containsKeyword, normalizeText, splitWords } from './text';
 
 export interface KeywordRule {
   category: DishCategory;
-  standalone?: boolean;
   /** Matched against the dish name. */
   name: string[];
   /** Matched against ingredients when nothing matched the name. */
@@ -26,7 +25,8 @@ const PROTEIN_STEMS = {
 
 const PROTEINS = [...PROTEIN_STEMS.poultry, ...PROTEIN_STEMS.fish, ...PROTEIN_STEMS.meat];
 
-const SIDES = [
+/** Grains and garnishes: no section of their own now, a dish named after them is a main (SPEC §2). */
+const GRAINS = [
   'гречк', 'гречнев', 'рис', 'пюре', 'булгур', 'киноа', 'картоф', 'картош', 'кускус',
   'перлов', 'макарон', 'лапш', 'овощ на грил', 'овощ гриль', 'чечевиц',
 ];
@@ -35,7 +35,7 @@ const PREP = ['заморозк', 'замороз', 'заморож', 'заго�
 
 /**
  * Built-in dictionary. Order matters: the first rule matching the name wins,
- * so specific categories (soup, salad, breakfast) come before generic proteins and sides.
+ * so specific categories (prep, soup, breakfast) come before generic proteins and grains.
  */
 export const BUILTIN_RULES: KeywordRule[] = [
   { category: 'prep', name: [...PREP, 'зажарк', 'компот', 'рублен зелен'], ingredients: PREP },
@@ -46,45 +46,29 @@ export const BUILTIN_RULES: KeywordRule[] = [
       'свекольник', 'лагман', 'шурп',
     ],
   },
-  { category: 'salad', name: ['салат', 'винегрет', 'оливье', 'цезарь'] },
   {
     category: 'breakfast',
     name: [
       'каш', 'омлет', 'сырник', 'яичниц', 'блин', 'оладь', 'оладуш', 'гранол', 'тост',
-      'мюсли', 'творожн', 'скрэмбл', 'овсянк',
+      'мюсли', 'творожн', 'скрэмбл', 'скрембл', 'овсянк', 'панкейк', 'смузи', 'бутерброд', 'сэндвич',
+      'сендвич', 'йогурт', 'чиа',
     ],
     ingredients: ['гранол', 'мюсли', 'овсян хлоп'],
   },
   {
-    category: 'snack',
-    name: [
-      'бутерброд', 'сэндвич', 'сендвич', 'смузи', 'хумус', 'батончик', 'йогурт', 'хлебц', 'орех', 'фрукт',
-      'ягод', 'нарезк', 'яблок', 'банан', 'кефир',
-    ],
-  },
-  {
     category: 'main',
-    standalone: true,
     name: [
       'плов', 'лазань', 'макарон по флотск', 'рагу', 'запеканк', 'паст', 'спагетти',
-      'ризотто', 'голубц', 'жарк',
-    ],
-  },
-  {
-    category: 'main',
-    name: [
+      'ризотто', 'голубц', 'жарк', 'салат', 'боул',
       ...PROTEINS, 'котлет', 'тефтел', 'фрикадел', 'стейк', 'отбивн', 'шницел', 'гуляш',
-      'бефстроганов', 'шашлык', 'биточк',
+      'бефстроганов', 'шашлык', 'биточк', ...GRAINS,
     ],
-    ingredients: PROTEINS,
+    ingredients: [...PROTEINS, ...GRAINS],
   },
-  { category: 'side', name: SIDES, ingredients: SIDES },
 ];
 
 export interface CategorySuggestion {
   category: DishCategory;
-  /** Only meaningful for `main`. */
-  standalone: boolean;
   /** `user` = learned from the user's earlier correction. */
   source: 'user' | 'builtin';
   via: 'name' | 'ingredients';
@@ -114,7 +98,6 @@ export function suggestCategory(
   if (userRule) {
     return {
       category: userRule.category,
-      standalone: userRule.category === 'main' && !!userRule.standalone,
       source: 'user',
       via: 'name',
       keyword: userRule.keyword,
@@ -124,7 +107,7 @@ export function suggestCategory(
   for (const rule of BUILTIN_RULES) {
     const keyword = rule.name.find((k) => containsKeyword(nameWords, k));
     if (keyword) {
-      return { category: rule.category, standalone: !!rule.standalone, source: 'builtin', via: 'name', keyword };
+      return { category: rule.category, source: 'builtin', via: 'name', keyword };
     }
   }
 
@@ -132,7 +115,7 @@ export function suggestCategory(
   for (const rule of BUILTIN_RULES) {
     const keyword = rule.ingredients?.find((k) => ingredientWords.some((w) => containsKeyword(w, k)));
     if (keyword) {
-      return { category: rule.category, standalone: !!rule.standalone, source: 'builtin', via: 'ingredients', keyword };
+      return { category: rule.category, source: 'builtin', via: 'ingredients', keyword };
     }
   }
 
@@ -160,19 +143,10 @@ export type LearnedRule = Omit<SortRule, 'id' | 'createdAt'>;
 export function learnedRule(
   name: string,
   suggestion: CategorySuggestion | null,
-  chosen: { category: DishCategory; standalone: boolean },
+  chosen: { category: DishCategory },
 ): LearnedRule | null {
   const keyword = normalizeText(name);
   if (!keyword) return null;
-  const isMain = chosen.category === 'main';
-  if (
-    suggestion &&
-    suggestion.category === chosen.category &&
-    (!isMain || suggestion.standalone === chosen.standalone)
-  ) {
-    return null;
-  }
-  return isMain
-    ? { keyword, category: chosen.category, standalone: chosen.standalone }
-    : { keyword, category: chosen.category };
+  if (suggestion && suggestion.category === chosen.category) return null;
+  return { keyword, category: chosen.category };
 }

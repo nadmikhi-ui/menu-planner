@@ -13,10 +13,7 @@ type Filter = DishCategory | 'all';
 /** Short labels for the filter row. */
 const FILTER_LABELS: Record<DishCategory, string> = {
   main: 'Основные',
-  side: 'Гарниры',
-  salad: 'Салаты',
   breakfast: 'Завтраки',
-  snack: 'Перекусы',
   lunch: 'Обеды',
   prep: 'Заготовки',
 };
@@ -133,7 +130,6 @@ function DishRow({ dish }: { dish: Dish }) {
   const badges: string[] = [];
   if (dish.category === 'main') {
     if (dish.protein) badges.push(PROTEIN_LABELS[dish.protein]);
-    if (dish.standalone) badges.push('без гарнира');
   }
   if (dish.category === 'prep' && dish.prepType) badges.push(PREP_TYPE_LABELS[dish.prepType]);
   if (dish.recipe) badges.push('рецепт');

@@ -12,7 +12,6 @@ export function makeDish(category: DishCategory, name: string, extra: Partial<Di
     category,
     ingredients: [],
     note: '',
-    standalone: false,
     addedAt: '2026-01-01T00:00:00.000Z',
     archived: false,
     ...extra,
@@ -28,10 +27,7 @@ export function makeDishes(category: DishCategory, prefix: string, count: number
 export function fullLibrary(): Dish[] {
   return [
     ...makeDishes('main', 'Основное', 12),
-    ...makeDishes('side', 'Гарнир', 12),
-    ...makeDishes('salad', 'Салат', 10),
     ...makeDishes('breakfast', 'Завтрак', 10),
-    ...makeDishes('snack', 'Перекус', 8),
     ...makeDishes('lunch', 'Суп', 4),
   ];
 }
@@ -42,10 +38,7 @@ export function context(dishes: Dish[], extra: Partial<PickContext> = {}): PickC
 
 export const STRICT: Record<DishCategory, RepeatPolicy> = {
   main: 'strict',
-  side: 'strict',
-  salad: 'strict',
   breakfast: 'strict',
-  snack: 'strict',
   lunch: 'strict',
   prep: 'strict',
 };

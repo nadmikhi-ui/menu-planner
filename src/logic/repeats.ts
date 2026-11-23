@@ -18,7 +18,6 @@ export type ItemWarning =
 
 const MEAL_FOR: Record<MealType, string> = {
   breakfast: 'на завтрак',
-  snack: 'на перекус',
   lunch: 'на обед',
   dinner: 'на ужин',
 };

@@ -11,6 +11,7 @@ import {
   chooseDish,
   createWeek,
   deleteDraft,
+  deleteWeek,
   repeatAsDraft,
   rerollDish,
   setWeekStatus,
@@ -35,7 +36,6 @@ async function addDishes(category: DishCategory, count: number, extra: Partial<D
       category,
       ingredients: [],
       note: '',
-      standalone: false,
       addedAt: '2026-01-01T00:00:00.000Z',
       archived: false,
       ...extra,
@@ -47,10 +47,7 @@ async function addDishes(category: DishCategory, count: number, extra: Partial<D
 
 async function addLibrary() {
   await addDishes('main', 12);
-  await addDishes('side', 12);
-  await addDishes('salad', 10);
   await addDishes('breakfast', 10);
-  await addDishes('snack', 8);
   await addDishes('lunch', 4);
 }
 
@@ -58,11 +55,11 @@ const dishIds = (slots: { items: { dishId: number | null }[] }[]) =>
   slots.flatMap((s) => s.items.map((i) => i.dishId)).filter((id): id is number => id !== null);
 
 describe('week lifecycle', () => {
-  it('creates an empty draft with 21 slots', async () => {
+  it('creates an empty draft with 16 slots', async () => {
     const id = await createWeek('2026-11-02', database);
     expect(await database.weeks.get(id)).toMatchObject({ status: 'draft', startDate: '2026-11-02' });
     const slots = await weekSlots(id, database);
-    expect(slots).toHaveLength(21);
+    expect(slots).toHaveLength(16);
     expect(dishIds(slots)).toEqual([]);
     expect(slots[0]).toMatchObject({ date: '2026-11-02', meal: 'breakfast' });
   });
@@ -101,7 +98,7 @@ describe('assembleAndSave', () => {
     const id = await createWeek('2026-11-02', database);
     await assembleAndSave(id, seededRng(7), database);
     const ids = dishIds(await weekSlots(id, database));
-    expect(ids.length).toBe(7 * 3 + 2 + 7 + 5); // dinners + 2 soups + breakfasts + snacks
+    expect(ids.length).toBe(7 + 2 + 7); // dinners + 2 weekend lunches + breakfasts
     expect(new Set(ids).size).toBe(ids.length);
   });
 
@@ -132,31 +129,30 @@ describe('assembleAndSave', () => {
 describe('slot edits', () => {
   it('chooses, rerolls and switches the lunch variant', async () => {
     await addLibrary();
-    const [plov] = await addDishes('main', 1, { name: 'Плов', standalone: true });
+    const [plov] = await addDishes('main', 1, { name: 'Плов' });
     const id = await createWeek('2026-11-02', database);
     await assembleAndSave(id, seededRng(3), database);
     let slots = await weekSlots(id, database);
     const dinner = slots.find((s) => s.meal === 'dinner')!;
 
     await chooseDish(id, dinner.id!, 0, plov!, seededRng(1), database);
-    expect((await database.slots.get(dinner.id!))?.items.map((i) => i.role)).toEqual(['main', 'salad']);
+    expect((await database.slots.get(dinner.id!))?.items).toEqual([{ role: 'main', dishId: plov }]);
 
-    const saladBefore = (await database.slots.get(dinner.id!))!.items[1]!.dishId;
-    expect(await rerollDish(id, dinner.id!, 1, seededRng(1), database)).toBe(true);
-    expect((await database.slots.get(dinner.id!))!.items[1]!.dishId).not.toBe(saladBefore);
+    expect(await rerollDish(id, dinner.id!, 0, seededRng(1), database)).toBe(true);
+    expect((await database.slots.get(dinner.id!))!.items[0]!.dishId).not.toBe(plov);
 
     slots = await weekSlots(id, database);
     const lunch = slots.find((s) => s.meal === 'lunch')!;
     await changeLunchVariant(id, lunch.id!, 'main', seededRng(1), database);
-    expect((await database.slots.get(lunch.id!))?.items.map((i) => i.role)).toEqual(['main', 'side']);
+    expect((await database.slots.get(lunch.id!))?.items.map((i) => i.role)).toEqual(['main']);
   });
 
   it('reports when there is no other dish to reroll to', async () => {
-    const [only] = await addDishes('snack', 1);
+    const [only] = await addDishes('breakfast', 1);
     const id = await createWeek('2026-11-02', database);
-    const snack = (await weekSlots(id, database)).find((s) => s.meal === 'snack')!;
-    await chooseDish(id, snack.id!, 0, only!, seededRng(1), database);
-    expect(await rerollDish(id, snack.id!, 0, seededRng(1), database)).toBe(false);
+    const breakfast = (await weekSlots(id, database)).find((s) => s.meal === 'breakfast')!;
+    await chooseDish(id, breakfast.id!, 0, only!, seededRng(1), database);
+    expect(await rerollDish(id, breakfast.id!, 0, seededRng(1), database)).toBe(false);
   });
 });
 
@@ -171,7 +167,6 @@ describe('«Повторить как черновик» (SPEC §8)', () => {
       category: 'prep',
       ingredients: [],
       note: '',
-      standalone: false,
       addedAt: '2026-01-01T00:00:00.000Z',
       archived: false,
     }))!;
@@ -225,5 +220,84 @@ describe('«Повторить как черновик» and the repeat rules', 
     expect(analysis.warningCount).toBeGreaterThan(0);
     expect(analysis.items.flat(2).every((w) => w.kind === 'lastWeek' || w.kind === 'duplicate')).toBe(true);
     expect(analysis.items.flat().filter((w) => w.length).length).toBe(analysis.warningCount);
+  });
+});
+
+describe('deleting weeks (SPEC §8)', () => {
+  it('deletes an approved or finished week with its days, prep tasks and shopping list', async () => {
+    await addLibrary();
+    const id = await createWeek('2026-11-02', database);
+    await assembleAndSave(id, seededRng(1), database);
+    await setWeekStatus(id, 'approved', database);
+    const [prep] = await addDishes('prep', 1);
+    await database.prepTasks.add({ weekId: id, dishId: prep!, done: false });
+    await database.shoppingItems.add({ weekId: id, productName: 'лук', bought: true, haveAtHome: false, manual: true });
+    await setWeekStatus(id, 'done', database);
+
+    await deleteWeek(id, database);
+    expect(await database.weeks.count()).toBe(0);
+    expect(await database.slots.count()).toBe(0);
+    expect(await database.prepTasks.count()).toBe(0);
+    expect(await database.shoppingItems.count()).toBe(0);
+  });
+
+  it('drops dishes skipped in the deleted week from the queue, keeps ones already placed', async () => {
+    await addLibrary();
+    const id = await createWeek('2026-11-02', database);
+    await assembleAndSave(id, seededRng(1), database);
+    await setWeekStatus(id, 'approved', database);
+    const [main] = await database.dishes.where('category').equals('main').primaryKeys();
+    await database.carryOver.bulkAdd([
+      { dishId: main!, role: 'main', fromWeekId: id, fromSlotId: 1, skipped: { reason: 'leftovers', at: '' }, status: 'pending', createdAt: '' },
+      { dishId: main!, role: 'main', fromWeekId: id, fromSlotId: 1, skipped: { reason: 'leftovers', at: '' }, status: 'placed', placedWeekId: 99, createdAt: '' },
+    ]);
+    await deleteWeek(id, database);
+    expect((await database.carryOver.toArray()).map((c) => c.status)).toEqual(['placed']);
+  });
+
+  it('returns carried dishes held by the deleted week to the queue', async () => {
+    await addLibrary();
+    const [main] = await database.dishes.where('category').equals('main').primaryKeys();
+    const carry = (await database.carryOver.add({
+      dishId: main!,
+      role: 'main',
+      fromWeekId: 77,
+      fromSlotId: 1,
+      skipped: { reason: 'leftovers', at: '' },
+      status: 'pending',
+      createdAt: '',
+    }))!;
+    const id = await createWeek('2026-11-09', database);
+    await assembleAndSave(id, seededRng(1), database);
+    await setWeekStatus(id, 'approved', database);
+    expect((await database.carryOver.get(carry))!.status).toBe('placed');
+    await deleteWeek(id, database);
+    expect(await database.carryOver.get(carry)).toMatchObject({ status: 'pending' });
+  });
+});
+
+describe('preps in the freezer (SPEC §6.1)', () => {
+  it('assembly puts in dishes for a prep that is in the freezer', async () => {
+    await addLibrary();
+    const mains = await database.dishes.where('category').equals('main').toArray();
+    const forPrep = mains.slice(0, 4);
+    const prep = (await database.dishes.add({
+      name: 'Фрикадельки',
+      category: 'prep',
+      ingredients: [],
+      note: '',
+      forDishes: forPrep.map((d) => d.name),
+      addedAt: '',
+      archived: false,
+    }))!;
+    await database.freezer.add({ name: 'Фрикадельки', dishId: prep, frozenAt: '2026-10-30', quantity: '', status: 'in_stock', updatedAt: '' });
+
+    for (let seed = 1; seed <= 5; seed++) {
+      const id = await createWeek(`2026-11-0${seed + 1}`, database);
+      await assembleAndSave(id, seededRng(seed), database);
+      const used = dishIds(await weekSlots(id, database));
+      expect(used.filter((d) => forPrep.some((m) => m.id === d)).length, `seed ${seed}`).toBeGreaterThanOrEqual(2);
+      await deleteWeek(id, database);
+    }
   });
 });

@@ -7,16 +7,16 @@ export type ISODateTime = string;
 
 // ---------- Dishes (SPEC §1) ----------
 
-export type DishCategory = 'main' | 'side' | 'salad' | 'breakfast' | 'snack' | 'lunch' | 'prep';
+export type DishCategory = 'main' | 'breakfast' | 'lunch' | 'prep';
 
-export const CATEGORIES: DishCategory[] = ['main', 'side', 'salad', 'breakfast', 'snack', 'lunch', 'prep'];
+export const CATEGORIES: DishCategory[] = ['main', 'breakfast', 'lunch', 'prep'];
+
+/** Sections removed in v2 (SPEC §1): dishes and week positions of these are deleted on upgrade and import. */
+export const REMOVED_CATEGORIES: readonly string[] = ['side', 'salad', 'snack'];
 
 export const CATEGORY_LABELS: Record<DishCategory, string> = {
   main: 'Основное блюдо',
-  side: 'Гарнир',
-  salad: 'Салат',
   breakfast: 'Завтрак',
-  snack: 'Перекус',
   lunch: 'Обед',
   prep: 'Заготовка в морозилку',
 };
@@ -76,12 +76,15 @@ export interface Dish {
   source?: string;
   /** Only for `main`. */
   protein?: ProteinType;
-  /** Only for `main`: needs no side dish (плов, лазанья…). */
-  standalone: boolean;
   /** Only for `prep`. */
   prepType?: PrepType;
   /** Only for `prep`. */
   prepSource?: PrepSource;
+  /**
+   * Only for `prep`: names of the dishes this prep is for (SPEC §6.1). Names, not ids,
+   * so links survive export/import and match book dishes added later.
+   */
+  forDishes?: string[];
   addedAt: ISODateTime;
   /** Hidden from pickers, never physically deleted. */
   archived: boolean;
@@ -112,7 +115,6 @@ export interface SortRule {
   /** Normalized keyword or full dish name. */
   keyword: string;
   category: DishCategory;
-  standalone?: boolean;
   createdAt: ISODateTime;
 }
 
@@ -138,18 +140,20 @@ export interface Week {
   shoppingSnapshot?: { productName: string; sources: { dishId: number; count: number; prep?: boolean }[] }[];
 }
 
-/** Meal of the day. Weekdays: breakfast/snack/dinner; Sat & Sun: breakfast/lunch/dinner. */
-export type MealType = 'breakfast' | 'snack' | 'lunch' | 'dinner';
+/** Meal of the day. Weekdays: breakfast/dinner; Sat & Sun: breakfast/lunch/dinner. */
+export type MealType = 'breakfast' | 'lunch' | 'dinner';
 
 export const MEAL_LABELS: Record<MealType, string> = {
   breakfast: 'Завтрак',
-  snack: 'Перекус в обед',
   lunch: 'Обед',
   dinner: 'Ужин',
 };
 
-/** Position of a dish inside a slot, e.g. dinner = main + side + salad. */
-export type SlotRole = 'main' | 'side' | 'salad' | 'breakfast' | 'snack' | 'lunch';
+/**
+ * Position of a dish inside a slot: dinner = one main; a weekend lunch = a «Обед» dish
+ * or a main (SPEC §3).
+ */
+export type SlotRole = 'main' | 'breakfast' | 'lunch';
 
 export type SkipReason = 'leftovers' | 'ate_out' | 'other';
 

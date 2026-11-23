@@ -58,7 +58,6 @@ for r in recipes:
             d['category'] = 'lunch'
         else:
             d['category'] = 'main'
-            d['standalone'] = True
             p = protein_of(title)
             if p == 'other':
                 p = r.get('hint') or protein_of(' '.join(products[:4]))
@@ -75,14 +74,12 @@ for p in PREPS:
     p = dict(p)
     pat = re.compile(p.pop('match'), re.I)
     uses = [d['name'] for d in dishes if pat.search(d['name'] + ' ' + ' '.join(d['ingredients']))]
-    if uses:
-        shown = ', '.join(uses[:6]) + (f' и ещё {len(uses) - 6}' if len(uses) > 6 else '')
-        p['note'] = p['note'] + f'\n\nПригодится в блюдах из книг ({len(uses)}): {shown}.'
+    p['forDishes'] = uses
     if not p['recipe'].get('ingredients'):
         p['recipe'] = {k: v for k, v in p['recipe'].items() if k != 'ingredients'} | {'ingredients': []}
     dishes.append({**p, 'category': 'prep'})
 
-lib = {'version': 1, 'staples': STAPLES, 'dishes': dishes}
+lib = {'version': 2, 'staples': STAPLES, 'dishes': dishes}
 json.dump(lib, open(OUT, 'w', encoding='utf-8'), ensure_ascii=False, indent=1)
 c = collections.Counter(d['category'] for d in dishes)
 print(dict(c), 'products:', len({p for d in dishes for p in d['ingredients']}))

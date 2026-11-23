@@ -72,19 +72,17 @@ describe('history (SPEC §8)', () => {
 
 describe('repeatSlots («Повторить как черновик»)', () => {
   const cutlets = makeDish('main', 'Котлеты');
-  const mash = makeDish('side', 'Пюре');
-  const old = makeDish('salad', 'Старый салат', { archived: true });
+  const porridge = makeDish('breakfast', 'Каша');
+  const old = makeDish('main', 'Старое блюдо', { archived: true });
   const soup = makeDish('lunch', 'Щи');
-  const dishesById = new Map([cutlets, mash, old, soup].map((d) => [d.id!, d]));
+  const dishesById = new Map([cutlets, porridge, old, soup].map((d) => [d.id!, d]));
 
   // Source week starts on Monday 26 Oct: dinner on Monday, soup on Saturday.
   const source: Slot[] = weekSkeleton('2026-10-26').map((s, i) => ({ ...s, id: i + 1, weekId: 1 }));
   const mondayDinner = source.find((s) => s.date === '2026-10-26' && s.meal === 'dinner')!;
-  mondayDinner.items = [
-    { role: 'main', dishId: cutlets.id!, skipped: { reason: 'ate_out', at: '' }, carryOverId: 3 },
-    { role: 'side', dishId: mash.id! },
-    { role: 'salad', dishId: old.id! },
-  ];
+  mondayDinner.items = [{ role: 'main', dishId: cutlets.id!, skipped: { reason: 'ate_out', at: '' }, carryOverId: 3 }];
+  source.find((s) => s.date === '2026-10-26' && s.meal === 'breakfast')!.items = [{ role: 'breakfast', dishId: porridge.id! }];
+  source.find((s) => s.date === '2026-10-27' && s.meal === 'dinner')!.items = [{ role: 'main', dishId: old.id! }];
   source.find((s) => s.date === '2026-10-31' && s.meal === 'lunch')!.items = [{ role: 'lunch', dishId: soup.id! }];
 
   it('copies dishes to the same weekdays, without skip marks and carry-over links', () => {
@@ -92,9 +90,12 @@ describe('repeatSlots («Повторить как черновик»)', () => {
     expect(slots).toHaveLength(source.length);
     expect(slots.find((s) => s.date === '2026-11-09' && s.meal === 'dinner')!.items).toEqual([
       { role: 'main', dishId: cutlets.id },
-      { role: 'side', dishId: mash.id },
-      { role: 'salad', dishId: null },
     ]);
+    expect(slots.find((s) => s.date === '2026-11-09' && s.meal === 'breakfast')!.items).toEqual([
+      { role: 'breakfast', dishId: porridge.id },
+    ]);
+    // An archived dish is not repeated.
+    expect(slots.find((s) => s.date === '2026-11-10' && s.meal === 'dinner')!.items).toEqual([{ role: 'main', dishId: null }]);
     expect(slots.find((s) => s.date === '2026-11-14' && s.meal === 'lunch')!.items).toEqual([{ role: 'lunch', dishId: soup.id }]);
   });
 

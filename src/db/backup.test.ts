@@ -25,13 +25,11 @@ afterEach(async () => {
 async function fill(database: MenuDB) {
   for (const [name, category] of [
     ['Котлеты', 'main'],
-    ['Пюре', 'side'],
-    ['Винегрет', 'salad'],
+    ['Пюре с котлетой', 'main'],
     ['Сырники', 'breakfast'],
-    ['Бутерброды', 'snack'],
     ['Щи', 'lunch'],
   ] as const) {
-    await saveDish({ name, category, ingredients: [`продукт ${name}`], note: '', standalone: false }, undefined, database);
+    await saveDish({ name, category, ingredients: [`продукт ${name}`], note: '' }, undefined, database);
   }
   const weekId = await createWeek('2026-11-02', database);
   await assembleAndSave(weekId, seededRng(1), database);
@@ -53,17 +51,17 @@ describe('export and import (SPEC §8)', () => {
 
   it('replaces the data that was there before', async () => {
     await fill(source);
-    await saveDish({ name: 'Только на втором', category: 'main', ingredients: [], note: '', standalone: false }, undefined, target);
+    await saveDish({ name: 'Только на втором', category: 'main', ingredients: [], note: '' }, undefined, target);
     await importBackup(await exportBackup(source), target);
     expect((await target.dishes.toArray()).map((d) => d.name)).not.toContain('Только на втором');
-    expect(await target.dishes.count()).toBe(6);
+    expect(await target.dishes.count()).toBe(4);
   });
 
   it('changes nothing if the import fails half-way', async () => {
     await fill(source);
     const backup = await exportBackup(source);
     backup.tables.products.push({ ...backup.tables.products[0]!, id: 999 }); // duplicate unique name
-    await saveDish({ name: 'Моё блюдо', category: 'main', ingredients: [], note: '', standalone: false }, undefined, target);
+    await saveDish({ name: 'Моё блюдо', category: 'main', ingredients: [], note: '' }, undefined, target);
 
     await expect(importBackup(backup, target)).rejects.toThrow();
     expect((await target.dishes.toArray()).map((d) => d.name)).toEqual(['Моё блюдо']);

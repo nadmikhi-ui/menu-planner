@@ -18,16 +18,12 @@ beforeEach(async () => {
         category,
         ingredients: [],
         note: '',
-        standalone: false,
         addedAt: '2026-01-01T00:00:00.000Z',
         archived: false,
       })),
     );
   await add('main', 20);
-  await add('side', 20);
-  await add('salad', 15);
   await add('breakfast', 15);
-  await add('snack', 12);
   await add('lunch', 6);
 });
 
@@ -35,27 +31,29 @@ afterEach(async () => {
   await database.delete();
 });
 
-/** An approved week 2–8 Nov with Wednesday's dinner main and side skipped. */
+/** An approved week 2–8 Nov with Wednesday's dinner and breakfast skipped. */
 async function weekWithSkippedDinner() {
   const weekId = await createWeek('2026-11-02', database);
   await assembleAndSave(weekId, seededRng(1), database);
   await setWeekStatus(weekId, 'approved', database);
-  const dinner = (await weekSlots(weekId, database)).find((s) => s.date === '2026-11-04' && s.meal === 'dinner')!;
-  await skipDishes(weekId, dinner.id!, [0, 1], { reason: 'ate_out', comment: 'у мамы' }, database);
-  return { weekId, dinner, main: dinner.items[0]!.dishId!, side: dinner.items[1]!.dishId! };
+  const slots = await weekSlots(weekId, database);
+  const dinner = slots.find((s) => s.date === '2026-11-04' && s.meal === 'dinner')!;
+  const breakfastSlot = slots.find((s) => s.date === '2026-11-04' && s.meal === 'breakfast')!;
+  await skipDishes(weekId, dinner.id!, [0], { reason: 'ate_out', comment: 'у мамы' }, database);
+  await skipDishes(weekId, breakfastSlot.id!, [0], { reason: 'ate_out', comment: 'у мамы' }, database);
+  return { weekId, dinner, breakfastSlot, main: dinner.items[0]!.dishId!, breakfast: breakfastSlot.items[0]!.dishId! };
 }
 
 describe('skipping (SPEC §5)', () => {
   it('marks dishes as skipped and queues them for next week', async () => {
-    const { dinner, main, side } = await weekWithSkippedDinner();
+    const { dinner, main, breakfast } = await weekWithSkippedDinner();
     const stored = await database.slots.get(dinner.id!);
     expect(stored!.items[0]!.skipped).toMatchObject({ reason: 'ate_out', comment: 'у мамы' });
-    expect(stored!.items[2]!.skipped).toBeUndefined();
 
     const queue = await database.carryOver.toArray();
     expect(queue.map((c) => [c.dishId, c.role, c.status])).toEqual([
       [main, 'main', 'pending'],
-      [side, 'side', 'pending'],
+      [breakfast, 'breakfast', 'pending'],
     ]);
   });
 
@@ -81,30 +79,30 @@ describe('skipping (SPEC §5)', () => {
   });
 
   it('blocks returning the week to draft while it has skips', async () => {
-    const { weekId, dinner } = await weekWithSkippedDinner();
+    const { weekId, dinner, breakfastSlot } = await weekWithSkippedDinner();
     await expect(setWeekStatus(weekId, 'draft', database)).rejects.toThrow('Пропущено');
     await unskipDish(weekId, dinner.id!, 0, database);
-    await unskipDish(weekId, dinner.id!, 1, database);
+    await unskipDish(weekId, breakfastSlot.id!, 0, database);
     await setWeekStatus(weekId, 'draft', database);
   });
 
   it('unskipping removes the dish from the queue', async () => {
-    const { weekId, dinner, side } = await weekWithSkippedDinner();
+    const { weekId, dinner, breakfast } = await weekWithSkippedDinner();
     await unskipDish(weekId, dinner.id!, 0, database);
     expect((await database.slots.get(dinner.id!))!.items[0]!.skipped).toBeUndefined();
-    expect((await database.carryOver.toArray()).map((c) => c.dishId)).toEqual([side]);
+    expect((await database.carryOver.toArray()).map((c) => c.dishId)).toEqual([breakfast]);
   });
 });
 
 describe('carry-over into the next week', () => {
   it('places carried dishes first and marks them placed', async () => {
-    const { main, side } = await weekWithSkippedDinner();
+    const { main, breakfast } = await weekWithSkippedDinner();
     const next = await createWeek('2026-11-09', database);
     await assembleAndSave(next, seededRng(2), database);
 
-    const monday = (await weekSlots(next, database)).find((s) => s.date === '2026-11-09' && s.meal === 'dinner')!;
-    expect(monday.items[0]).toMatchObject({ dishId: main });
-    expect(monday.items[1]).toMatchObject({ dishId: side });
+    const mondaySlots = (await weekSlots(next, database)).filter((s) => s.date === '2026-11-09');
+    expect(mondaySlots.find((s) => s.meal === 'dinner')!.items[0]).toMatchObject({ dishId: main });
+    expect(mondaySlots.find((s) => s.meal === 'breakfast')!.items[0]).toMatchObject({ dishId: breakfast });
     expect((await database.carryOver.toArray()).every((c) => c.status === 'placed' && c.placedWeekId === next)).toBe(true);
   });
 

@@ -1,5 +1,4 @@
 import {
-  addSalad,
   applyDish,
   assembleWeek,
   fillEmpty,
@@ -9,6 +8,7 @@ import {
 } from '../logic/assemble';
 import { queueFor, toCarried } from '../logic/carryover';
 import { historyContext, repeatSlots } from '../logic/history';
+import { availableSupplies } from '../logic/preps';
 import type { Rng } from '../logic/random';
 import { weekSkeleton, type LunchVariant, type SlotDraft } from '../logic/week';
 import type { ISODate, Slot, SlotItem, Week, WeekStatus } from '../types';
@@ -21,20 +21,27 @@ export async function weekSlots(weekId: number, database: MenuDB = db): Promise<
   return sortSlots(slots);
 }
 
-const MEAL_ORDER = { breakfast: 0, snack: 1, lunch: 2, dinner: 3 } as const;
+const MEAL_ORDER = { breakfast: 0, lunch: 1, dinner: 2 } as const;
 
 export function sortSlots<T extends SlotDraft>(slots: T[]): T[] {
   return [...slots].sort((a, b) => a.date.localeCompare(b.date) || MEAL_ORDER[a.meal] - MEAL_ORDER[b.meal]);
 }
 
-/** Dishes plus what was cooked before this week. */
+/** Dishes, what was cooked before this week and which preps it can build on (SPEC §6.1). */
 export async function pickContext(week: Week, rng: Rng = Math.random, database: MenuDB = db): Promise<PickContext> {
-  const [dishes, weeks, slots] = await Promise.all([
+  const [dishes, weeks, slots, freezer, tasks] = await Promise.all([
     database.dishes.toArray(),
     database.weeks.toArray(),
     database.slots.toArray(),
+    database.freezer.toArray(),
+    database.prepTasks.toArray(),
   ]);
-  return { dishes, rng, ...historyContext(weeks, slots, week) };
+  return {
+    dishes,
+    rng,
+    ...historyContext(weeks, slots, week),
+    supplies: availableSupplies(week, dishes, freezer, tasks, weeks),
+  };
 }
 
 /** Creates an empty draft week starting on `startDate`. */
@@ -61,7 +68,14 @@ async function getDraft(weekId: number, database: MenuDB): Promise<Week> {
   return week;
 }
 
-const TABLES = (database: MenuDB) => [database.weeks, database.slots, database.dishes, database.carryOver];
+const TABLES = (database: MenuDB) => [
+  database.weeks,
+  database.slots,
+  database.dishes,
+  database.carryOver,
+  database.freezer,
+  database.prepTasks,
+];
 
 /** «Пересобрать всё» replaces every dish; «Заполнить только пустые» keeps the chosen ones. */
 export type AssembleMode = 'all' | 'empty';
@@ -172,10 +186,6 @@ export function changeLunchVariant(
   return editSlot(weekId, slotId, (slots, i, ctx) => setLunchVariant(slots, i, variant, ctx), rng, database);
 }
 
-export function addLunchSalad(weekId: number, slotId: number, rng: Rng = Math.random, database: MenuDB = db) {
-  return editSlot(weekId, slotId, (slots, i, ctx) => addSalad(slots, i, ctx), rng, database);
-}
-
 export function removeItem(weekId: number, slotId: number, itemIndex: number, database: MenuDB = db) {
   return editSlot(weekId, slotId, (slots, i) => slots[i]!.items.filter((_, j) => j !== itemIndex), Math.random, database);
 }
@@ -211,15 +221,32 @@ export async function setWeekStatus(
   });
 }
 
+/**
+ * Deletes a week in any status (SPEC §8): its days, prep tasks and shopping list.
+ * Carry-overs it held go back to the queue; dishes skipped in it and still waiting
+ * in the queue are dropped. What was frozen stays in the freezer.
+ */
+export async function deleteWeek(weekId: number, database: MenuDB = db): Promise<void> {
+  await database.transaction(
+    'rw',
+    [database.weeks, database.slots, database.carryOver, database.prepTasks, database.shoppingItems],
+    async () => {
+      await getWeek(weekId, database);
+      await database.slots.where('weekId').equals(weekId).delete();
+      await database.prepTasks.where('weekId').equals(weekId).delete();
+      await database.shoppingItems.where('weekId').equals(weekId).delete();
+      await syncCarryOvers(weekId, database);
+      const skippedHere = await database.carryOver.where('fromWeekId').equals(weekId).toArray();
+      await database.carryOver.bulkDelete(skippedHere.filter((c) => c.status !== 'placed').map((c) => c.id!));
+      await database.weeks.delete(weekId);
+    },
+  );
+}
+
 /** Deletes a draft; carry-overs it held go back to the queue. */
 export async function deleteDraft(weekId: number, database: MenuDB = db): Promise<void> {
-  await database.transaction('rw', [database.weeks, database.slots, database.carryOver, database.prepTasks], async () => {
-    await getDraft(weekId, database);
-    await database.slots.where('weekId').equals(weekId).delete();
-    await database.prepTasks.where('weekId').equals(weekId).delete();
-    await syncCarryOvers(weekId, database);
-    await database.weeks.delete(weekId);
-  });
+  await getDraft(weekId, database);
+  await deleteWeek(weekId, database);
 }
 
 /**

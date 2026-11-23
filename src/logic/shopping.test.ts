@@ -14,8 +14,8 @@ import { makeDish } from './test-fixtures';
 
 const borscht = makeDish('lunch', 'Борщ', { ingredients: ['свекла', 'капуста', 'картофель', 'соль'] });
 const cutlets = makeDish('main', 'Котлеты', { ingredients: ['фарш', 'лук', 'соль'] });
-const mash = makeDish('side', 'Пюре', { ingredients: ['картофель', 'молоко'] });
-const salad = makeDish('salad', 'Винегрет', { ingredients: ['Свёкла', 'картофель', 'огурцы соленые'] });
+const mash = makeDish('breakfast', 'Пюре', { ingredients: ['картофель', 'молоко'] });
+const salad = makeDish('main', 'Винегрет', { ingredients: ['Свёкла', 'картофель', 'огурцы соленые'] });
 const prep = makeDish('prep', 'Зелень', { ingredients: ['укроп'] });
 const dishes = [borscht, cutlets, mash, salad, prep];
 
@@ -114,7 +114,7 @@ describe('buildShoppingList (SPEC §7)', () => {
   });
 
   it('skips non-existent dishes and empty positions', () => {
-    const slots = [slot([{ role: 'main', dishId: null }, { role: 'side', dishId: 999 }, item(mash)])];
+    const slots = [slot([{ role: 'main', dishId: null }, { role: 'main', dishId: 999 }, item(mash)])];
     expect(names(buildShoppingList(input({ slots })).lines)).toEqual(['картофель', 'молоко']);
   });
 });

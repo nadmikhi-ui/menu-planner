@@ -1,6 +1,7 @@
 // JSON export / import of all data (SPEC §8).
 import { CATEGORIES, type ISODateTime } from '../types';
 import { parseISODate, toISODate } from './dates';
+import { dropRemovedSections } from './migrate';
 
 export const BACKUP_APP = 'menu-planner';
 
@@ -93,15 +94,21 @@ export function parseBackup(text: string, currentSchemaVersion: number): Backup 
     throw new Error('Файл сохранён более новой версией приложения. Обновите приложение и повторите.');
   }
 
-  const tables = {} as BackupTables;
+  let tables = {} as BackupTables;
   for (const name of TABLE_NAMES) {
     const rows = raw.tables[name] ?? [];
     if (!Array.isArray(rows)) throw new Error(`Файл повреждён: раздел «${TABLE_LABELS[name]}»`);
+    if (!rows.every(isObject)) throw new Error(`Файл повреждён: раздел «${TABLE_LABELS[name]}»`);
+    tables[name] = rows as Record<string, unknown>[];
+  }
+  // Files from v1 still have sides, salads and snacks: drop them as the app upgrade does.
+  if (version < 2) tables = dropRemovedSections(tables);
+  for (const name of TABLE_NAMES) {
+    const rows = tables[name];
     rows.forEach((row: unknown, i) => {
       const problem = isObject(row) ? rowProblem(name, row) : 'не запись';
       if (problem) throw new Error(`Файл повреждён: раздел «${TABLE_LABELS[name]}», запись ${i + 1} — ${problem}`);
     });
-    tables[name] = rows as Record<string, unknown>[];
   }
   return {
     app: BACKUP_APP,

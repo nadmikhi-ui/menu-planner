@@ -6,7 +6,7 @@ import { db, getSettings, type MenuDB } from './db';
 import { OTHER_PLACE_ID } from './seed';
 
 /** Bump when the bundled library changes, so new dishes are added on the next start. */
-export const BOOK_LIBRARY_VERSION = 1;
+export const BOOK_LIBRARY_VERSION = 2;
 
 export interface BookDish {
   name: string;
@@ -16,9 +16,10 @@ export interface BookDish {
   source: string;
   note?: string;
   protein?: ProteinType;
-  standalone?: boolean;
   prepType?: PrepType;
   prepSource?: PrepSource;
+  /** Preps: names of the book dishes they are for (SPEC §6.1). */
+  forDishes?: string[];
 }
 
 export interface BookLibrary {
@@ -56,6 +57,10 @@ export async function importBookLibrary(
     for (const b of library.dishes) {
       const existing = byName.get(normalizeText(b.name));
       if (existing) {
+        // v2: preps learn which dishes they are for; the user's own links are kept.
+        if (existing.category === 'prep' && b.forDishes?.length && !existing.forDishes?.length) {
+          await database.dishes.update(existing.id!, { forDishes: b.forDishes });
+        }
         if (!existing.recipe && b.recipe) {
           await database.dishes.update(existing.id!, {
             recipe: b.recipe,
@@ -71,7 +76,6 @@ export async function importBookLibrary(
         category: b.category,
         ingredients: uniqueProducts(b.ingredients),
         note: b.note ?? '',
-        standalone: b.category === 'main' && !!b.standalone,
         addedAt: now.toISOString(),
         archived: false,
         source: b.source,
@@ -81,6 +85,7 @@ export async function importBookLibrary(
       if (b.category === 'prep') {
         if (b.prepType) dish.prepType = b.prepType;
         if (b.prepSource) dish.prepSource = b.prepSource;
+        if (b.forDishes?.length) dish.forDishes = b.forDishes;
       }
       dish.id = await database.dishes.add(dish);
       byName.set(normalizeText(dish.name), dish);
