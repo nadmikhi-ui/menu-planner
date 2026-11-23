@@ -22,13 +22,13 @@ function sample() {
     { id: 1, name: 'Фарш', status: 'in_stock' },
     { id: 2, name: 'Укроп', status: 'finished' },
   ];
-  return makeBackup(tables, 1, new Date('2026-10-28T10:00:00Z'));
+  return makeBackup(tables, 2, new Date('2026-10-28T10:00:00Z'));
 }
 
 describe('backup (SPEC §8)', () => {
   it('round-trips through JSON', () => {
     const backup = sample();
-    expect(parseBackup(JSON.stringify(backup), 1)).toEqual(backup);
+    expect(parseBackup(JSON.stringify(backup), 2)).toEqual(backup);
   });
 
   it('summarizes what will be loaded', () => {
@@ -41,7 +41,7 @@ describe('backup (SPEC §8)', () => {
 
   it('treats missing tables as empty', () => {
     const { tables, ...rest } = sample();
-    const parsed = parseBackup(JSON.stringify({ ...rest, tables: { dishes: tables.dishes } }), 1);
+    const parsed = parseBackup(JSON.stringify({ ...rest, tables: { dishes: tables.dishes } }), 2);
     expect(parsed.tables.dishes).toHaveLength(1);
     expect(parsed.tables.freezer).toEqual([]);
   });
@@ -53,21 +53,51 @@ describe('backup (SPEC §8)', () => {
   });
 
   it('rejects backups from a newer app version', () => {
-    expect(() => parseBackup(JSON.stringify({ ...sample(), schemaVersion: 2 }), 1)).toThrow('более новой версией');
-    expect(() => parseBackup(JSON.stringify({ ...sample(), schemaVersion: 'x' }), 1)).toThrow('версия');
+    expect(() => parseBackup(JSON.stringify({ ...sample(), schemaVersion: 3 }), 2)).toThrow('более новой версией');
+    expect(() => parseBackup(JSON.stringify({ ...sample(), schemaVersion: 'x' }), 2)).toThrow('версия');
   });
 
   it('points at a damaged table and row', () => {
     const backup = sample();
-    expect(() => parseBackup(JSON.stringify({ ...backup, tables: { ...backup.tables, weeks: {} } }), 1)).toThrow(
+    expect(() => parseBackup(JSON.stringify({ ...backup, tables: { ...backup.tables, weeks: {} } }), 2)).toThrow(
       'раздел «недели»',
     );
     const dishes = [...backup.tables.dishes, { id: 2, name: 'Каша', category: 'dessert', ingredients: [] }];
-    expect(() => parseBackup(JSON.stringify({ ...backup, tables: { ...backup.tables, dishes } }), 1)).toThrow(
+    expect(() => parseBackup(JSON.stringify({ ...backup, tables: { ...backup.tables, dishes } }), 2)).toThrow(
       'раздел «блюда», запись 2 — неизвестный раздел',
     );
     const slots = [{ weekId: 1, items: [] }];
-    expect(() => parseBackup(JSON.stringify({ ...backup, tables: { ...backup.tables, slots } }), 1)).toThrow('нет id');
+    expect(() => parseBackup(JSON.stringify({ ...backup, tables: { ...backup.tables, slots } }), 2)).toThrow('нет id');
+  });
+
+  it('drops sides, salads and snacks from a file of the first version', () => {
+    const tables = emptyTables();
+    tables.dishes = [
+      { id: 1, name: 'Котлеты', category: 'main', ingredients: [], standalone: false },
+      { id: 2, name: 'Пюре', category: 'side', ingredients: [] },
+      { id: 3, name: 'Бутерброд', category: 'snack', ingredients: [] },
+    ];
+    tables.slots = [
+      { id: 1, weekId: 1, date: '2026-11-02', meal: 'snack', items: [{ role: 'snack', dishId: 3 }] },
+      {
+        id: 2,
+        weekId: 1,
+        date: '2026-11-02',
+        meal: 'dinner',
+        items: [
+          { role: 'main', dishId: 1 },
+          { role: 'side', dishId: 2 },
+          { role: 'salad', dishId: null },
+        ],
+      },
+    ];
+    tables.settings = [{ id: 'main', repeatPolicy: { main: 'strict', side: 'relaxed', snack: 'strict' } }];
+    const parsed = parseBackup(JSON.stringify(makeBackup(tables, 1, new Date())), 2);
+    expect(parsed.tables.dishes).toEqual([{ id: 1, name: 'Котлеты', category: 'main', ingredients: [] }]);
+    expect(parsed.tables.slots).toEqual([
+      { id: 2, weekId: 1, date: '2026-11-02', meal: 'dinner', items: [{ role: 'main', dishId: 1 }] },
+    ]);
+    expect(parsed.tables.settings[0]!.repeatPolicy).toEqual({ main: 'strict' });
   });
 });
 

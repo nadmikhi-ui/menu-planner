@@ -23,7 +23,7 @@ const draft = (overrides: Partial<DishDraft>): DishDraft => ({ ...emptyDraft(), 
 
 describe('saveDish', () => {
   it('creates a dish and adds new ingredients to the product dictionary as «Другое»', async () => {
-    const id = await saveDish(draft({ name: 'Плов', category: 'main', standalone: true, ingredients: ['Рис', 'баранина', 'соль'] }), undefined, database);
+    const id = await saveDish(draft({ name: 'Плов', category: 'main', ingredients: ['Рис', 'баранина', 'соль'] }), undefined, database);
 
     expect(await database.dishes.get(id)).toMatchObject({ name: 'Плов', ingredients: ['рис', 'баранина', 'соль'] });
     const products = await database.products.where('name').anyOf('рис', 'баранина', 'соль').toArray();
@@ -41,14 +41,13 @@ describe('saveDish', () => {
   it('remembers a correction and uses it next time (SPEC §2)', async () => {
     expect((await suggestForDish('Блины с мясом', [], database))?.category).toBe('breakfast');
 
-    await saveDish(draft({ name: 'Блины с мясом', category: 'main', standalone: true }), undefined, database);
+    await saveDish(draft({ name: 'Блины с мясом', category: 'main' }), undefined, database);
 
     expect(await database.sortRules.toArray()).toMatchObject([
-      { keyword: 'блины с мясом', category: 'main', standalone: true },
+      { keyword: 'блины с мясом', category: 'main' },
     ]);
     expect(await suggestForDish('Блины с мясом', [], database)).toMatchObject({
       category: 'main',
-      standalone: true,
       source: 'user',
     });
     // Plain «Блины» still follow the built-in rule.
@@ -62,7 +61,7 @@ describe('saveDish', () => {
   });
 
   it('replaces an older rule with the same keyword', async () => {
-    await saveDish(draft({ name: 'Кесадилья', category: 'snack' }), undefined, database);
+    await saveDish(draft({ name: 'Кесадилья', category: 'breakfast' }), undefined, database);
     const id = (await database.dishes.toArray())[0]!.id!;
     await saveDish(draft({ name: 'Кесадилья', category: 'main' }), id, database);
 
@@ -71,8 +70,8 @@ describe('saveDish', () => {
   });
 
   it('updates an existing dish and keeps its added date', async () => {
-    const id = await saveDish(draft({ name: 'Гречка', category: 'side' }), undefined, database, new Date('2026-01-01'));
-    await saveDish(draft({ name: 'Гречка с луком', category: 'side', note: 'Обжарить лук' }), id, database, new Date('2026-02-01'));
+    const id = await saveDish(draft({ name: 'Гречка', category: 'main' }), undefined, database, new Date('2026-01-01'));
+    await saveDish(draft({ name: 'Гречка с луком', category: 'main', note: 'Обжарить лук' }), id, database, new Date('2026-02-01'));
 
     expect(await database.dishes.get(id)).toMatchObject({
       name: 'Гречка с луком',
@@ -82,18 +81,18 @@ describe('saveDish', () => {
   });
 
   it('rejects unknown ids', async () => {
-    await expect(saveDish(draft({ name: 'Гречка', category: 'side' }), 999, database)).rejects.toThrow();
+    await expect(saveDish(draft({ name: 'Гречка', category: 'main' }), 999, database)).rejects.toThrow();
   });
 });
 
 describe('setDishArchived', () => {
   it('hides and restores a dish without deleting it', async () => {
-    const id = await saveDish(draft({ name: 'Гречка', category: 'side' }), undefined, database);
+    const id = await saveDish(draft({ name: 'Гречка', category: 'main' }), undefined, database);
     await setDishArchived(id, true, database);
     expect((await database.dishes.get(id))?.archived).toBe(true);
 
     // Editing an archived dish keeps it archived.
-    await saveDish(draft({ name: 'Гречка', category: 'side', note: 'x' }), id, database);
+    await saveDish(draft({ name: 'Гречка', category: 'main', note: 'x' }), id, database);
     expect((await database.dishes.get(id))?.archived).toBe(true);
 
     await setDishArchived(id, false, database);
@@ -118,7 +117,7 @@ describe('loadDemoDishes', () => {
   it('skips dishes that already exist, even archived ones', async () => {
     const database = new MenuDB(`test-demo-${Math.random()}`);
     try {
-      const id = await saveDish({ name: 'борщ', category: 'lunch', ingredients: [], note: '', standalone: false }, undefined, database);
+      const id = await saveDish({ name: 'борщ', category: 'lunch', ingredients: [], note: '' }, undefined, database);
       await setDishArchived(id, true, database);
       expect(await loadDemoDishes(database)).toBe(DEMO_DISHES.length - 1);
     } finally {
@@ -153,7 +152,7 @@ describe('deleteDemoDishes', () => {
   it('removes the demo dishes and leaves the user’s own', async () => {
     const database = await withDemo();
     try {
-      await saveDish({ name: 'Мой борщ', category: 'lunch', ingredients: [], note: '', standalone: false }, undefined, database);
+      await saveDish({ name: 'Мой борщ', category: 'lunch', ingredients: [], note: '' }, undefined, database);
       expect(await database.dishes.filter((d) => !!d.demo).count()).toBe(DEMO_DISHES.length);
 
       expect(await deleteDemoDishes(database)).toEqual({ deleted: DEMO_DISHES.length, archived: 0 });
@@ -167,7 +166,7 @@ describe('deleteDemoDishes', () => {
     const database = await withDemo();
     try {
       const dish = (await database.dishes.where('name').equals('Плов').first())!;
-      await saveDish({ name: 'Плов', category: 'main', ingredients: ['рис', 'баранина'], note: 'мой рецепт', standalone: true }, dish.id, database);
+      await saveDish({ name: 'Плов', category: 'main', ingredients: ['рис', 'баранина'], note: 'мой рецепт' }, dish.id, database);
       expect((await database.dishes.get(dish.id!))!.demo).toBeUndefined();
 
       await deleteDemoDishes(database);

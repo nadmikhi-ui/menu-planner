@@ -10,10 +10,7 @@ export const DEFAULT_PLACES: ShopPlace[] = [
 
 const STRICT_EVERYWHERE: Record<DishCategory, RepeatPolicy> = {
   main: 'strict',
-  side: 'strict',
-  salad: 'strict',
   breakfast: 'strict',
-  snack: 'strict',
   lunch: 'strict',
   prep: 'strict',
 };

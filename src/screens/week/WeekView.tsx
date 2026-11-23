@@ -2,22 +2,23 @@ import { useLiveQuery } from 'dexie-react-hooks';
 import { useEffect, useMemo, useState } from 'react';
 import { Badge, Notice } from '../../components/ui';
 import { db, getSettings } from '../../db/db';
+import { addPrepTask } from '../../db/freezer';
 import {
-  addLunchSalad,
   assembleAndSave,
   type AssembleMode,
   changeLunchVariant,
-  deleteDraft,
-  removeItem,
+  deleteWeek,
   rerollDish,
   setWeekStatus,
   weekSlots,
 } from '../../db/weeks';
+import type { PrepSupply } from '../../logic/assemble';
 import { formatDay, formatWeekRange, isWeekend } from '../../logic/dates';
 import { queueFor } from '../../logic/carryover';
 import { historyContext } from '../../logic/history';
+import { availableSupplies, prepSuggestions, prepsForDish, type PrepSuggestion } from '../../logic/preps';
 import { analyzeWeek, warningText, type ItemWarning } from '../../logic/repeats';
-import { ROLE_LABELS, lunchVariant, weekDates } from '../../logic/week';
+import { lunchVariant, weekDates } from '../../logic/week';
 import { openRoute } from '../../navigation';
 import {
   CATEGORY_LABELS,
@@ -52,21 +53,28 @@ export interface WeekData {
   slotDates: Map<number, ISODate>;
   /** «Заморозить на этой неделе» (SPEC §6). */
   prepTasks: PrepTask[];
+  /** Preps this week builds on: frozen or planned in earlier weeks (SPEC §6.1). */
+  supplies: PrepSupply[];
+  /** «Заготовить впрок» for the next weeks (SPEC §6.1). */
+  suggestions: PrepSuggestion[];
 }
 
 /** Everything the week view needs, kept live across all tables it depends on. */
 function useWeekData(week: Week): WeekData | undefined {
   return useLiveQuery(async () => {
-    const [slots, dishes, weeks, allSlots, settings, carryOvers, prepTasks] = await Promise.all([
+    const [slots, dishes, weeks, allSlots, settings, carryOvers, allTasks, freezer] = await Promise.all([
       weekSlots(week.id!),
       db.dishes.toArray(),
       db.weeks.toArray(),
       db.slots.toArray(),
       getSettings(),
       db.carryOver.toArray(),
-      db.prepTasks.where('weekId').equals(week.id!).toArray(),
+      db.prepTasks.toArray(),
+      db.freezer.toArray(),
     ]);
+    const prepTasks = allTasks.filter((t) => t.weekId === week.id);
     const { lastWeek } = historyContext(weeks, allSlots, week);
+    const supplies = availableSupplies(week, dishes, freezer, allTasks, weeks);
     const draftIds = new Set(weeks.filter((w) => w.status === 'draft').map((w) => w.id));
     return {
       slots,
@@ -81,6 +89,8 @@ function useWeekData(week: Week): WeekData | undefined {
       ),
       slotDates: new Map(allSlots.map((s) => [s.id!, s.date])),
       prepTasks,
+      supplies,
+      suggestions: prepSuggestions(dishes, supplies, prepTasks, lastWeek),
     };
   }, [week.id, week.startDate, week.status]);
 }
@@ -137,10 +147,14 @@ export function WeekView({ week, path }: { week: Week; path: string[] }) {
   };
 
   const remove = () => {
-    if (window.confirm('Удалить черновик недели?')) {
+    const question =
+      week.status === 'draft'
+        ? 'Удалить черновик недели?'
+        : 'Удалить неделю целиком? Меню, список покупок и заготовки недели удалятся, отметки «Пропущено» — тоже. То, что уже в морозилке, останется.';
+    if (window.confirm(question)) {
       void run(async () => {
-        await deleteDraft(weekId);
-        window.location.replace('#/week');
+        await deleteWeek(weekId);
+        window.location.replace(window.location.hash.startsWith('#/more/history') ? '#/more/history' : '#/week');
       });
     }
   };
@@ -241,8 +255,7 @@ export function WeekView({ week, path }: { week: Week; path: string[] }) {
                 onRecipe={(dishId) => openRoute(`#/week/${weekId}/recipe/${dishId}`)}
                 onReroll={(itemIndex) => reroll(slot.id!, itemIndex)}
                 onLunchVariant={(variant) => run(() => changeLunchVariant(weekId, slot.id!, variant))}
-                onAddSalad={() => run(() => addLunchSalad(weekId, slot.id!))}
-                onRemove={(itemIndex) => run(() => removeItem(weekId, slot.id!, itemIndex))}
+                supplies={week.status === 'done' ? [] : data.supplies}
               />
             ))}
         </section>
@@ -271,6 +284,15 @@ export function WeekView({ week, path }: { week: Week; path: string[] }) {
         </section>
       )}
 
+      {week.status !== 'done' && (
+        <PrepPlanning
+          supplies={data.supplies}
+          suggestions={data.suggestions}
+          busy={busy}
+          onAdd={(prepId) => void run(() => addPrepTask(weekId, prepId))}
+        />
+      )}
+
       <div className="space-y-3 pt-2 pb-4">
         {isDraft && (
           <>
@@ -281,9 +303,6 @@ export function WeekView({ week, path }: { week: Week; path: string[] }) {
               className="min-h-12 w-full rounded-xl bg-stone-800 font-semibold text-white active:bg-stone-900 disabled:opacity-40"
             >
               Утвердить неделю
-            </button>
-            <button type="button" onClick={remove} disabled={busy} className="min-h-11 w-full text-sm text-stone-500">
-              Удалить черновик
             </button>
           </>
         )}
@@ -307,6 +326,9 @@ export function WeekView({ week, path }: { week: Week; path: string[] }) {
             </button>
           </>
         )}
+        <button type="button" onClick={remove} disabled={busy} className="min-h-11 w-full text-sm text-red-700">
+          {isDraft ? 'Удалить черновик' : 'Удалить неделю'}
+        </button>
       </div>
 
       {isDraft && path[0] === 'pick' && routeSlot?.items[routeItem] && (
@@ -341,8 +363,8 @@ interface MealBlockProps {
   onRecipe: (dishId: number) => void;
   onReroll: (itemIndex: number) => void;
   onLunchVariant: (variant: 'soup' | 'main') => void;
-  onAddSalad: () => void;
-  onRemove: (itemIndex: number) => void;
+  /** Available preps: a dish that uses one gets the «❄» mark (SPEC §6.1). */
+  supplies: PrepSupply[];
 }
 
 function MealBlock({
@@ -356,12 +378,10 @@ function MealBlock({
   onRecipe,
   onReroll,
   onLunchVariant,
-  onAddSalad,
-  onRemove,
+  supplies,
 }: MealBlockProps) {
   const isLunch = slot.meal === 'lunch';
   const variant = lunchVariant(slot.items);
-  const multi = slot.items.length > 1 || (isLunch && variant === 'main');
 
   return (
     <div className="border-b border-stone-100 px-4 py-3 last:border-b-0">
@@ -379,7 +399,7 @@ function MealBlock({
                   variant === v ? 'bg-stone-800 text-white' : 'text-stone-600 ring-1 ring-stone-300'
                 }`}
               >
-                {v === 'soup' ? 'Суп и т.п.' : 'Основное + гарнир'}
+                {v === 'soup' ? 'Обед / суп' : 'Основное'}
               </button>
             ))}
           </div>
@@ -390,7 +410,7 @@ function MealBlock({
           const dish = item.dishId === null ? undefined : dishesById.get(item.dishId);
           // Repeat warnings don't matter once the week is approved.
           const itemWarnings = editable ? (warnings[i] ?? []) : [];
-          const optionalSalad = isLunch && item.role === 'salad';
+          const preps = dish && !item.skipped ? prepsForDish(supplies, dish.id!) : [];
           return (
             <li
               key={`${item.role}-${i}`}
@@ -402,12 +422,14 @@ function MealBlock({
                 onClick={() => (editable ? onPick(i) : onSkip(i))}
                 className="min-h-11 flex-1 px-2 py-1.5 text-left disabled:cursor-default"
               >
-                {multi && <span className="mr-2 text-xs text-stone-400">{ROLE_LABELS[item.role]}</span>}
                 <span className={!dish ? 'text-stone-400' : item.skipped ? 'text-stone-400 line-through' : ''}>
                   {dish ? dish.name : editable ? 'Выбрать…' : 'Не выбрано'}
                 </span>
                 {item.carryOverId !== undefined && !item.skipped && (
                   <span className="ml-2 rounded-md bg-sky-50 px-1.5 py-0.5 text-xs font-medium text-sky-800">перенос</span>
+                )}
+                {preps.length > 0 && (
+                  <span className="mt-0.5 block text-xs font-medium text-sky-800">❄ из морозилки: {preps.join(', ')}</span>
                 )}
                 {item.skipped && (
                   <span className="mt-0.5 block text-xs text-stone-500">
@@ -434,23 +456,87 @@ function MealBlock({
               {editable && (
                 <button
                   type="button"
-                  onClick={() => (optionalSalad ? onRemove(i) : onReroll(i))}
-                  aria-label={optionalSalad ? 'Убрать салат' : 'Заменить на другое случайное'}
-                  title={optionalSalad ? 'Убрать салат' : 'Заменить на другое случайное'}
+                  onClick={() => onReroll(i)}
+                  aria-label="Заменить на другое случайное"
+                  title="Заменить на другое случайное"
                   className="flex w-11 shrink-0 items-center justify-center text-xl text-stone-400 active:text-brand-700"
                 >
-                  {optionalSalad ? '×' : '↻'}
+                  ↻
                 </button>
               )}
             </li>
           );
         })}
       </ul>
-      {isLunch && editable && variant === 'main' && !slot.items.some((i) => i.role === 'salad') && (
-        <button type="button" onClick={onAddSalad} className="mt-1 min-h-11 px-2 text-sm font-medium text-brand-700">
-          + Салат
-        </button>
-      )}
     </div>
   );
+}
+
+/**
+ * SPEC §6.1: what the week builds on (frozen or planned earlier) and «Заготовить впрок» —
+ * preps to make now for the dishes of the next weeks.
+ */
+function PrepPlanning({
+  supplies,
+  suggestions,
+  busy,
+  onAdd,
+}: {
+  supplies: PrepSupply[];
+  suggestions: PrepSuggestion[];
+  busy: boolean;
+  onAdd: (prepId: number) => void;
+}) {
+  if (!supplies.length && !suggestions.length) return null;
+  return (
+    <section className="space-y-3">
+      {supplies.length > 0 && (
+        <div className="rounded-2xl bg-sky-50 px-4 py-3 text-sm text-sky-900 ring-1 ring-sky-100">
+          <p className="font-semibold">❄ Уже есть заготовки</p>
+          <p className="mt-0.5">
+            {supplies.map((s) => s.name).join(', ')}. При сборке недели блюда под них ставятся в первую очередь.
+          </p>
+        </div>
+      )}
+      {suggestions.length > 0 && (
+        <div className="space-y-2">
+          <div>
+            <h3 className="text-xs font-semibold uppercase tracking-wide text-stone-500">Заготовить впрок</h3>
+            <p className="text-sm text-stone-500">
+              На следующие недели: пока заготовка в морозилке, блюда с ней будут попадать в меню.
+            </p>
+          </div>
+          <ul className="divide-y divide-stone-100 overflow-hidden rounded-2xl bg-white ring-1 ring-stone-200">
+            {suggestions.map(({ prep, dishes }) => (
+              <li key={prep.id} className="flex items-center gap-2 py-2.5 pr-2 pl-4">
+                <span className="min-w-0 flex-1">
+                  <span className="block">{prep.name}</span>
+                  <span className="line-clamp-2 text-xs text-stone-500">
+                    Для {dishes.length} {plural(dishes.length)}: {dishes.slice(0, 2).map((d) => d.name).join('; ')}
+                    {dishes.length > 2 ? '…' : ''}
+                  </span>
+                </span>
+                <button
+                  type="button"
+                  disabled={busy}
+                  onClick={() => onAdd(prep.id!)}
+                  aria-label={`Добавить «${prep.name}» в план недели`}
+                  className="min-h-11 shrink-0 rounded-full px-3 text-sm font-medium text-brand-700 ring-1 ring-brand-600 disabled:opacity-50"
+                >
+                  В план
+                </button>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+    </section>
+  );
+}
+
+function plural(n: number): string {
+  const d10 = n % 10;
+  const d100 = n % 100;
+  if (d10 === 1 && d100 !== 11) return 'блюда';
+  return 'блюд';
 }

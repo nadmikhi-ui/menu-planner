@@ -24,7 +24,7 @@ const library: BookLibrary = {
   version: 1,
   staples: ['кумин'],
   dishes: [
-    { name: 'Курица с гречкой', category: 'main', standalone: true, protein: 'poultry', ingredients: ['куриное филе', 'гречка', 'кумин'], recipe, source: 'Книга ужинов' },
+    { name: 'Курица с гречкой', category: 'main', protein: 'poultry', ingredients: ['куриное филе', 'гречка', 'кумин'], recipe, source: 'Книга ужинов' },
     { name: 'Омлет с овощами', category: 'breakfast', ingredients: ['яйца', 'помидоры'], recipe, source: 'Книга завтраков' },
     { name: 'Заморозка: запечённая курица порциями', category: 'prep', prepType: 'main', prepSource: 'fresh', ingredients: ['куриное филе'], source: 'Книга ужинов' },
   ],
@@ -38,7 +38,7 @@ describe('importBookLibrary', () => {
     expect(result).toEqual({ added: 3, enriched: 0 });
     expect(await database.dishes.count()).toBe(4);
     const chicken = await database.dishes.where('name').equals('Курица с гречкой').first();
-    expect(chicken).toMatchObject({ category: 'main', standalone: true, protein: 'poultry', source: 'Книга ужинов', recipe });
+    expect(chicken).toMatchObject({ category: 'main', protein: 'poultry', source: 'Книга ужинов', recipe });
     expect(await database.sortRules.count()).toBe(0);
   });
 

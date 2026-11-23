@@ -21,6 +21,7 @@ import {
   type PrepType,
   type ProteinType,
 } from '../../types';
+import { DishLinksInput } from './DishLinksInput';
 import { IngredientInput } from './IngredientInput';
 import { RecipeSection } from './RecipeSection';
 
@@ -52,7 +53,6 @@ export function DishEditor({ idParam, preset }: { idParam: string; preset?: stri
 /** Fields the auto-sorter fills in until the user sets them by hand. */
 interface Touched {
   category: boolean;
-  standalone: boolean;
   protein: boolean;
 }
 
@@ -64,7 +64,6 @@ function DishForm({ dish, presetCategory }: { dish?: Dish; presetCategory?: Dish
   const [draft, setDraft] = useState<DishDraft>(initial);
   const [touched, setTouched] = useState<Touched>({
     category: !isNew || presetCategory !== undefined,
-    standalone: !isNew,
     protein: !isNew,
   });
   const [pendingIngredient, setPendingIngredient] = useState('');
@@ -85,22 +84,16 @@ function DishForm({ dish, presetCategory }: { dish?: Dish; presetCategory?: Dish
   const effective: DishDraft = {
     ...draft,
     category: touched.category ? draft.category : (suggestion?.category ?? null),
-    standalone: touched.standalone
-      ? draft.standalone
-      : suggestion?.category === 'main'
-        ? suggestion.standalone
-        : draft.standalone,
     protein: touched.protein ? draft.protein : (proteinGuess ?? undefined),
     ingredients: uniqueProducts([...draft.ingredients, ...parseIngredients(pendingIngredient)]),
   };
 
   const canSave = validateDraft(effective).length === 0 && !busy;
   const duplicate = allDishes ? findDuplicate(effective.name, allDishes, dish?.id) : undefined;
-  const sectionChanged =
-    !dish || dish.category !== effective.category || dish.standalone !== effective.standalone;
+  const sectionChanged = !dish || dish.category !== effective.category;
   const willLearn =
     sectionChanged && effective.category && rules
-      ? learnedRule(effective.name, suggestion, { category: effective.category, standalone: effective.standalone })
+      ? learnedRule(effective.name, suggestion, { category: effective.category })
       : null;
   const dirty = pendingIngredient.trim() !== '' || JSON.stringify(draft) !== JSON.stringify(initial);
 
@@ -232,21 +225,6 @@ function DishForm({ dish, presetCategory }: { dish?: Dish; presetCategory?: Dish
                 }}
               />
             </div>
-            <label className="flex min-h-12 items-center justify-between gap-4 rounded-xl bg-white px-3.5 py-2.5 ring-1 ring-stone-300">
-              <span>
-                <span className="block font-medium">Самостоятельное блюдо</span>
-                <span className="block text-sm text-stone-500">Не нужен гарнир: плов, лазанья, рагу…</span>
-              </span>
-              <input
-                type="checkbox"
-                checked={effective.standalone}
-                onChange={(e) => {
-                  update({ standalone: e.target.checked });
-                  setTouched((t) => ({ ...t, standalone: true }));
-                }}
-                className="h-6 w-6 shrink-0 accent-brand-700"
-              />
-            </label>
           </>
         )}
 
@@ -266,6 +244,14 @@ function DishForm({ dish, presetCategory }: { dish?: Dish; presetCategory?: Dish
                 labels={PREP_SOURCE_LABELS}
                 value={draft.prepSource}
                 onChange={(prepSource) => update({ prepSource })}
+              />
+            </div>
+            <div>
+              <FieldLabel>Для каких блюд</FieldLabel>
+              <DishLinksInput
+                value={draft.forDishes ?? []}
+                onChange={(forDishes) => update({ forDishes })}
+                dishes={allDishes ?? []}
               />
             </div>
           </>
@@ -363,7 +349,7 @@ function SuggestionNotice({
   return (
     <Notice tone="info">
       Подсказка: <b>{CATEGORY_LABELS[suggestion.category]}</b>
-      {suggestion.category === 'main' && suggestion.standalone ? ', без гарнира' : ''} ({why}). Если верно — просто
+      {' '}({why}). Если верно — просто
       сохраните.
     </Notice>
   );

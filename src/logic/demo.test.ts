@@ -5,12 +5,12 @@ import { validateDraft } from './dish';
 import { CATEGORIES } from '../types';
 
 describe('demo library', () => {
-  it('has 6–8 dishes in each section', () => {
-    for (const category of CATEGORIES.filter((c) => c !== 'prep')) {
-      const count = DEMO_DISHES.filter((d) => d.category === category).length;
-      expect(count, category).toBeGreaterThanOrEqual(6);
-      expect(count, category).toBeLessThanOrEqual(8);
-    }
+  it('has enough dishes for a week in each section: 7 dinners, 7 breakfasts, 2 lunches', () => {
+    const count = (category: string) => DEMO_DISHES.filter((d) => d.category === category).length;
+    expect(count('main')).toBeGreaterThanOrEqual(7);
+    expect(count('breakfast')).toBeGreaterThanOrEqual(7);
+    expect(count('lunch')).toBeGreaterThanOrEqual(2);
+    expect(CATEGORIES.every((c) => count(c) > 0)).toBe(true);
   });
 
   it('has valid dishes with unique names', () => {
@@ -23,7 +23,6 @@ describe('demo library', () => {
     for (const dish of DEMO_DISHES) {
       const suggestion = suggestCategory(dish.name, dish.ingredients, []);
       expect(suggestion?.category, dish.name).toBe(dish.category);
-      if (dish.category === 'main') expect(suggestion?.standalone, dish.name).toBe(dish.standalone);
     }
   });
 });

@@ -125,8 +125,8 @@ describe('refreshing the stored list', () => {
   });
 });
 
-function draft(name: string, category: 'breakfast' | 'main' | 'side' | 'salad' | 'snack' | 'lunch') {
-  return { name, category, ingredients: [], note: '', standalone: false, protein: undefined, prepType: undefined, prepSource: undefined };
+function draft(name: string, category: 'breakfast' | 'main' | 'lunch') {
+  return { name, category, ingredients: [], note: '', protein: undefined, prepType: undefined, prepSource: undefined };
 }
 
 /** An approved week whose breakfasts are the given dishes (the rest stays empty). */
@@ -144,7 +144,7 @@ async function approvedWeekWith(dishNames: string[]) {
 
 /** Enough dishes to assemble whole weeks; every dish has its own product «продукт <id>». */
 async function fillLibrary() {
-  const counts = { main: 20, side: 20, salad: 15, breakfast: 15, snack: 12, lunch: 6 } as const;
+  const counts = { main: 20, breakfast: 15, lunch: 6 } as const;
   for (const [category, count] of Object.entries(counts) as [keyof typeof counts, number][]) {
     const ids = await database.dishes.bulkAdd(
       Array.from({ length: count }, (_, i) => ({
@@ -152,7 +152,6 @@ async function fillLibrary() {
         category,
         ingredients: [],
         note: '',
-        standalone: false,
         addedAt: '2026-01-01T00:00:00.000Z',
         archived: false,
       })),

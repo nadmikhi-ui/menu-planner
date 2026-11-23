@@ -13,7 +13,7 @@ describe('suggestCategory — built-in dictionary (SPEC §2)', () => {
     ['Уха', 'lunch'],
     ['Куриный бульон', 'lunch'],
     ['Крем-суп из тыквы', 'lunch'],
-    ['Салат с курицей', 'salad'],
+    ['Салат с курицей', 'main'],
     ['Овсяная каша', 'breakfast'],
     ['Омлет с ветчиной', 'breakfast'],
     ['Сырники', 'breakfast'],
@@ -23,14 +23,14 @@ describe('suggestCategory — built-in dictionary (SPEC §2)', () => {
     ['Гранола с йогуртом', 'breakfast'],
     ['Тост с авокадо', 'breakfast'],
     ['Творожная запеканка', 'breakfast'],
-    ['Гречка', 'side'],
-    ['Рис отварной', 'side'],
-    ['Картофельное пюре', 'side'],
-    ['Булгур', 'side'],
-    ['Киноа', 'side'],
-    ['Картофель по-деревенски', 'side'],
-    ['Овощи на гриле', 'side'],
-    ['Макароны', 'side'],
+    ['Гречка', 'main'],
+    ['Рис отварной', 'main'],
+    ['Картофельное пюре', 'main'],
+    ['Булгур', 'main'],
+    ['Киноа', 'main'],
+    ['Картофель по-деревенски', 'main'],
+    ['Овощи на гриле', 'main'],
+    ['Макароны', 'main'],
     ['Плов', 'main'],
     ['Лазанья', 'main'],
     ['Макароны по-флотски', 'main'],
@@ -40,16 +40,16 @@ describe('suggestCategory — built-in dictionary (SPEC §2)', () => {
     ['Индейка с овощами', 'main'],
     ['Запечённая рыба', 'main'],
     ['Лосось на пару', 'main'],
-    ['Салат с тунцом', 'salad'],
+    ['Салат с тунцом', 'main'],
     ['Лосось на гриле', 'main'],
     ['Котлеты из фарша', 'main'],
     ['Курица с гречкой', 'main'],
     ['Заготовка для борща', 'prep'],
     ['Замороженные ягоды', 'prep'],
-    ['Бутерброд с сыром', 'snack'],
-    ['Йогурт с фруктами', 'snack'],
-    ['Яблоко и орехи', 'snack'],
-    ['Сырная нарезка', 'snack'],
+    ['Бутерброд с сыром', 'breakfast'],
+    ['Йогурт с фруктами', 'breakfast'],
+    ['Тёплый салат с курицей', 'main'],
+    ['Гречка с грибами', 'main'],
     ['Зажарка для борща', 'prep'],
     ['Смородина для компота', 'prep'],
     ['Рубленая зелень', 'prep'],
@@ -57,11 +57,11 @@ describe('suggestCategory — built-in dictionary (SPEC §2)', () => {
     expect(category(name)).toBe(expected);
   });
 
-  it('marks плов/лазанья/макароны по-флотски/рагу/запеканка as standalone mains', () => {
+  it('puts плов/лазанья/макароны по-флотски/рагу/запеканка into mains', () => {
     for (const name of ['Плов', 'Лазанья', 'Макароны по-флотски', 'Овощное рагу', 'Картофельная запеканка']) {
-      expect(suggestCategory(name, []), name).toMatchObject({ category: 'main', standalone: true });
+      expect(suggestCategory(name, []), name).toMatchObject({ category: 'main' });
     }
-    expect(suggestCategory('Курица терияки', [])).toMatchObject({ category: 'main', standalone: false });
+    expect(suggestCategory('Курица терияки', [])).toMatchObject({ category: 'main' });
   });
 
   it('reports the matched keyword', () => {
@@ -75,11 +75,11 @@ describe('suggestCategory — built-in dictionary (SPEC §2)', () => {
       via: 'ingredients',
       keyword: 'говядин',
     });
-    expect(category('Драники', ['картофель', 'яйцо'])).toBe('side');
+    expect(category('Драники', ['картофель', 'яйцо'])).toBe('main');
   });
 
   it('prefers the name over ingredients', () => {
-    expect(category('Салат «Цезарь»', ['курица', 'салат романо'])).toBe('salad');
+    expect(category('Овсянка «Цезарь»', ['курица'])).toBe('breakfast');
   });
 
   it('returns null when no rule matches', () => {
@@ -109,17 +109,16 @@ describe('suggestCategory — user rules', () => {
   });
 
   it('prefer the most specific rule', () => {
-    const rules = [rule('паста', 'snack'), rule('паста с курицей', 'main', { standalone: true })];
+    const rules = [rule('паста', 'lunch'), rule('паста с курицей', 'main', {})];
     expect(suggestCategory('Паста с курицей и брокколи', [], rules)).toMatchObject({
       category: 'main',
-      standalone: true,
       keyword: 'паста с курицей',
     });
   });
 
   it('prefer the newest rule among equally specific ones', () => {
     const rules = [
-      rule('кесадилья', 'snack', { createdAt: '2026-01-01T00:00:00.000Z' }),
+      rule('кесадилья', 'breakfast', { createdAt: '2026-01-01T00:00:00.000Z' }),
       rule('кесадилья', 'main', { createdAt: '2026-05-01T00:00:00.000Z' }),
     ];
     expect(category('Кесадилья', [], rules)).toBe('main');
@@ -142,7 +141,6 @@ describe('suggestProtein', () => {
 describe('learnedRule', () => {
   const suggestion = (overrides: Partial<CategorySuggestion>): CategorySuggestion => ({
     category: 'breakfast',
-    standalone: false,
     source: 'builtin',
     via: 'name',
     keyword: 'блин',
@@ -150,30 +148,24 @@ describe('learnedRule', () => {
   });
 
   it('returns null when the suggestion was accepted', () => {
-    expect(learnedRule('Блины', suggestion({}), { category: 'breakfast', standalone: false })).toBeNull();
+    expect(learnedRule('Блины', suggestion({}), { category: 'breakfast' })).toBeNull();
   });
 
   it('remembers a corrected category by the normalized name', () => {
-    expect(learnedRule('Блины с мясом!', suggestion({}), { category: 'main', standalone: false })).toEqual({
+    expect(learnedRule('Блины с мясом!', suggestion({}), { category: 'main' })).toEqual({
       keyword: 'блины с мясом',
       category: 'main',
-      standalone: false,
     });
   });
 
-  it('remembers a changed «самостоятельное» flag for mains', () => {
-    const s = suggestion({ category: 'main', standalone: true, keyword: 'паст' });
-    expect(learnedRule('Паста', s, { category: 'main', standalone: false })).toMatchObject({ standalone: false });
-  });
-
   it('remembers a choice made without a suggestion', () => {
-    expect(learnedRule('Шакшука', null, { category: 'breakfast', standalone: false })).toEqual({
+    expect(learnedRule('Шакшука', null, { category: 'breakfast' })).toEqual({
       keyword: 'шакшука',
       category: 'breakfast',
     });
   });
 
   it('ignores empty names', () => {
-    expect(learnedRule('  !! ', null, { category: 'side', standalone: false })).toBeNull();
+    expect(learnedRule('  !! ', null, { category: 'main' })).toBeNull();
   });
 });

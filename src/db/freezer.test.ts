@@ -29,7 +29,7 @@ afterEach(async () => {
 });
 
 const prepIdea = (name: string, ingredients: string[] = []) =>
-  saveDish({ name, category: 'prep', ingredients, note: '', standalone: false, prepType: 'greens', prepSource: 'fresh' }, undefined, database);
+  saveDish({ name, category: 'prep', ingredients, note: '', prepType: 'greens', prepSource: 'fresh' }, undefined, database);
 
 describe('«Сейчас в морозилке» (SPEC §6)', () => {
   it('adds, edits, uses part of and finishes a record', async () => {
@@ -71,7 +71,7 @@ describe('«Заморозить на этой неделе»', () => {
   });
 
   it('accepts only prep dishes and weeks that are not finished', async () => {
-    const soup = await saveDish({ name: 'Щи', category: 'lunch', ingredients: [], note: '', standalone: false }, undefined, database);
+    const soup = await saveDish({ name: 'Щи', category: 'lunch', ingredients: [], note: '' }, undefined, database);
     const dill = await prepIdea('Укроп');
     const weekId = await createWeek('2026-11-02', database);
     await expect(addPrepTask(weekId, soup, database)).rejects.toThrow('Это не заготовка');

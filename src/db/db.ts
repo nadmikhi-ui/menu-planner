@@ -11,6 +11,7 @@ import type {
   SortRule,
   Week,
 } from '../types';
+import { dropRemovedSections } from '../logic/migrate';
 import { defaultSettings, defaultStapleProducts } from './seed';
 
 export class MenuDB extends Dexie {
@@ -41,6 +42,20 @@ export class MenuDB extends Dexie {
       shoppingItems: '++id, weekId, [weekId+productName]',
       settings: 'id',
     });
+
+    // v2: sections «Гарнир», «Салат», «Перекус» removed (SPEC §1). Same indexes, data rewritten.
+    this.version(2)
+      .stores({})
+      .upgrade(async (tx) => {
+        const names = ['dishes', 'slots', 'carryOver', 'sortRules', 'settings', 'weeks'] as const;
+        const before = {} as Record<(typeof names)[number], Record<string, unknown>[]>;
+        for (const name of names) before[name] = await tx.table(name).toArray();
+        const after = dropRemovedSections(before);
+        for (const name of names) {
+          await tx.table(name).clear();
+          await tx.table(name).bulkAdd(after[name]);
+        }
+      });
 
     this.on('populate', async (tx) => {
       await tx.table('settings').add(defaultSettings());
