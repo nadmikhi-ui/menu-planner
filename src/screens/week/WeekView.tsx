@@ -19,7 +19,7 @@ import { historyContext } from '../../logic/history';
 import { availableSupplies, prepSuggestions, prepsForDish, type PrepSuggestion } from '../../logic/preps';
 import { analyzeWeek, warningText, type ItemWarning } from '../../logic/repeats';
 import { lunchVariant, weekDates } from '../../logic/week';
-import { openRoute } from '../../navigation';
+import { closeRoute, openRoute } from '../../navigation';
 import {
   CATEGORY_LABELS,
   MEAL_LABELS,
@@ -36,7 +36,7 @@ import {
 import { CompletePrepSheet, PrepIdeaPicker, PrepTaskList } from '../freezer/PrepTasks';
 import { CarryOverPanel } from './CarryOverPanel';
 import { DishPicker } from './DishPicker';
-import { RecipeSheet } from './RecipeSheet';
+import { DishCardSheet } from './DishCardSheet';
 import { SkipSheet } from './SkipSheet';
 
 export interface WeekData {
@@ -95,7 +95,9 @@ function useWeekData(week: Week): WeekData | undefined {
   }, [week.id, week.startDate, week.status]);
 }
 
-export function WeekView({ week, path }: { week: Week; path: string[] }) {
+export function WeekView({ week, path, base: baseHref }: { week: Week; path: string[]; base?: string }) {
+  /** Where this week's panels open: the «Неделя» tab, or the history page for a finished week. */
+  const base = baseHref ?? `#/week/${week.id}`;
   const data = useWeekData(week);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
@@ -167,6 +169,8 @@ export function WeekView({ week, path }: { week: Week; path: string[] }) {
   const routeSlot = data.slots.find((s) => s.id === Number(path[1]));
   const routeItem = Number(path[2]);
   const isApproved = week.status === 'approved';
+  const routeDishId = routeSlot?.items[routeItem]?.dishId;
+  const routeDish = routeDishId == null ? undefined : data.dishesById.get(routeDishId);
   const routePrepTask = path[0] === 'prep' ? data.prepTasks.find((t) => t.id === Number(path[1])) : undefined;
 
   return (
@@ -249,10 +253,8 @@ export function WeekView({ week, path }: { week: Week; path: string[] }) {
                 warnings={analysis.items[index]!}
                 dishesById={data.dishesById}
                 editable={isDraft && !busy}
-                skippable={isApproved && !busy}
-                onPick={(itemIndex) => openRoute(`#/week/${weekId}/pick/${slot.id}/${itemIndex}`)}
-                onSkip={(itemIndex) => openRoute(`#/week/${weekId}/skip/${slot.id}/${itemIndex}`)}
-                onRecipe={(dishId) => openRoute(`#/week/${weekId}/recipe/${dishId}`)}
+                onPick={(itemIndex) => openRoute(`${base}/pick/${slot.id}/${itemIndex}`)}
+                onOpen={(itemIndex) => openRoute(`${base}/dish/${slot.id}/${itemIndex}`)}
                 onReroll={(itemIndex) => reroll(slot.id!, itemIndex)}
                 onLunchVariant={(variant) => run(() => changeLunchVariant(weekId, slot.id!, variant))}
                 supplies={week.status === 'done' ? [] : data.supplies}
@@ -268,14 +270,14 @@ export function WeekView({ week, path }: { week: Week; path: string[] }) {
             <PrepTaskList
               tasks={data.prepTasks}
               dishesById={data.dishesById}
-              doneRoute={(t) => `#/week/${weekId}/prep/${t.id}`}
+              doneRoute={(t) => `${base}/prep/${t.id}`}
               editable={week.status !== 'done'}
             />
           )}
           {week.status !== 'done' && (
             <button
               type="button"
-              onClick={() => openRoute(`#/week/${weekId}/prep-add`)}
+              onClick={() => openRoute(`${base}/prep-add`)}
               className="min-h-11 w-full rounded-xl border border-dashed border-stone-300 text-sm font-medium text-stone-600"
             >
               + Заготовка в морозилку
@@ -337,14 +339,21 @@ export function WeekView({ week, path }: { week: Week; path: string[] }) {
       {isApproved && path[0] === 'skip' && routeSlot?.items[routeItem] && (
         <SkipSheet week={week} slot={routeSlot} itemIndex={routeItem} dishesById={data.dishesById} />
       )}
-      {path[0] === 'recipe' && data.dishesById.get(Number(path[1])) && (
-        <RecipeSheet dish={data.dishesById.get(Number(path[1]))!} fallback={`#/week/${weekId}`} />
+      {path[0] === 'dish' && routeDish && (
+        <DishCardSheet
+          week={week}
+          slot={routeSlot!}
+          itemIndex={routeItem}
+          dish={routeDish}
+          freezerPreps={week.status === 'done' ? [] : prepsForDish(data.supplies, routeDish.id!)}
+          onClose={() => closeRoute(base)}
+        />
       )}
       {path[0] === 'prep-add' && (
-        <PrepIdeaPicker week={week} dishes={data.dishes} tasks={data.prepTasks} fallback={`#/week/${weekId}`} />
+        <PrepIdeaPicker week={week} dishes={data.dishes} tasks={data.prepTasks} fallback={base} />
       )}
       {path[0] === 'prep' && routePrepTask && !routePrepTask.done && (
-        <CompletePrepSheet task={routePrepTask} dish={data.dishesById.get(routePrepTask.dishId)} fallback={`#/week/${weekId}`} />
+        <CompletePrepSheet task={routePrepTask} dish={data.dishesById.get(routePrepTask.dishId)} fallback={base} />
       )}
     </div>
   );
@@ -355,12 +364,10 @@ interface MealBlockProps {
   warnings: ItemWarning[][];
   dishesById: Map<number, Dish>;
   editable: boolean;
-  /** Approved week: tapping a dish opens the «Пропущено» panel. */
-  skippable: boolean;
+  /** Empty position of a draft: choose a dish. */
   onPick: (itemIndex: number) => void;
-  onSkip: (itemIndex: number) => void;
-  /** Opens the recipe of a dish that has one. */
-  onRecipe: (dishId: number) => void;
+  /** A chosen dish: its card with composition and recipe (SPEC §3). */
+  onOpen: (itemIndex: number) => void;
   onReroll: (itemIndex: number) => void;
   onLunchVariant: (variant: 'soup' | 'main') => void;
   /** Available preps: a dish that uses one gets the «❄» mark (SPEC §6.1). */
@@ -372,10 +379,8 @@ function MealBlock({
   warnings,
   dishesById,
   editable,
-  skippable,
   onPick,
-  onSkip,
-  onRecipe,
+  onOpen,
   onReroll,
   onLunchVariant,
   supplies,
@@ -418,8 +423,8 @@ function MealBlock({
             >
               <button
                 type="button"
-                disabled={!editable && !(skippable && dish)}
-                onClick={() => (editable ? onPick(i) : onSkip(i))}
+                disabled={!dish && !editable}
+                onClick={() => (dish ? onOpen(i) : onPick(i))}
                 className="min-h-11 flex-1 px-2 py-1.5 text-left disabled:cursor-default"
               >
                 <span className={!dish ? 'text-stone-400' : item.skipped ? 'text-stone-400 line-through' : ''}>
@@ -443,16 +448,6 @@ function MealBlock({
                   </span>
                 ))}
               </button>
-              {!editable && dish?.recipe && (
-                <button
-                  type="button"
-                  onClick={() => onRecipe(dish.id!)}
-                  aria-label={`Рецепт: ${dish.name}`}
-                  className="min-h-11 shrink-0 px-2 text-sm font-medium text-brand-700"
-                >
-                  Рецепт
-                </button>
-              )}
               {editable && (
                 <button
                   type="button"

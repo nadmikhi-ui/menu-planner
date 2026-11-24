@@ -22,7 +22,7 @@ export function HistoryPage({ path }: { path: string[] }) {
   if (!data) return <Screen title="История недель" back={BACK}>{null}</Screen>;
 
   const selected = path[0] ? data.weeks.find((w) => w.id === Number(path[0])) : undefined;
-  if (selected) return <HistoryWeek week={selected} weeks={data.weeks} repeating={path[1] === 'repeat'} />;
+  if (selected) return <HistoryWeek week={selected} weeks={data.weeks} path={path.slice(1)} />;
 
   const weeks = historyList(data.weeks);
   return (
@@ -70,7 +70,7 @@ function weekSummary(week: Week, slots: Slot[]): string {
   return [`блюд: ${items.length}`, skipped ? `пропущено: ${skipped}` : ''].filter(Boolean).join(' · ');
 }
 
-function HistoryWeek({ week, weeks, repeating }: { week: Week; weeks: Week[]; repeating: boolean }) {
+function HistoryWeek({ week, weeks, path }: { week: Week; weeks: Week[]; path: string[] }) {
   return (
     <Screen title="История недель" back={{ href: '#/more/history', label: 'История' }}>
       <div className="space-y-4">
@@ -81,9 +81,9 @@ function HistoryWeek({ week, weeks, repeating }: { week: Week; weeks: Week[]; re
         >
           Повторить как черновик
         </button>
-        <WeekView key={week.id} week={week} path={[]} />
+        <WeekView key={week.id} week={week} path={path} base={`#/more/history/${week.id}`} />
       </div>
-      {repeating && <RepeatSheet week={week} weeks={weeks} />}
+      {path[0] === 'repeat' && <RepeatSheet week={week} weeks={weeks} />}
     </Screen>
   );
 }
